@@ -1,0 +1,801 @@
+import React, { useState, useEffect, useRef } from "react";
+
+// Cloud image background - matches your filename and location
+const CLOUD_BG_URL = "/myclouds.png";
+
+// Theme colors
+const colors = {
+  cobalt: "#38B6FF",
+  black: "#181a1b",
+  dark: "#232526",
+  accent: "#0f2027",
+  gray: "#222",
+  text: "#eee",
+  border: "#222d",
+};
+
+// SVG Bat logo (center + watermark)
+function BatLogo({ size = 72 }) {
+  return (
+    <svg width={size} height={size / 4} viewBox="0 0 72 18" fill="none">
+      <path
+        d="M3 16 Q10 3 19 9 Q36 3 54 9 Q63 3 69 16 Q50 6 36 15 Q22 6 3 16"
+        fill={colors.black}
+        stroke={colors.cobalt}
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+// Animated circular waveform (magic!)
+const CircularWaveform = ({ size = 120, animate }) => {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!animate) return;
+    const timer = setInterval(() => setTick(t => t + 1), 45);
+    return () => clearInterval(timer);
+  }, [animate]);
+  const points = [];
+  const segments = 16;
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    const base = size / 2;
+    const radius =
+      base - 22 +
+      14 * Math.abs(Math.sin(angle * 3 + tick / 15) * Math.cos(angle + tick / 8)) +
+      9 * Math.abs(Math.sin(tick / 5 + angle * 2));
+    points.push({
+      x1: base + 22 * Math.cos(angle),
+      y1: base + 22 * Math.sin(angle),
+      x2: base + (22 + radius) * Math.cos(angle),
+      y2: base + (22 + radius) * Math.sin(angle),
+      color: colors.cobalt,
+    });
+  }
+  return (
+    <svg width={size} height={size}>
+      <circle cx={size / 2} cy={size / 2} r={28} fill={colors.black} stroke={colors.cobalt} strokeWidth="2.5" />
+      {points.map((p, i) => (
+        <line
+          key={i}
+          x1={p.x1}
+          y1={p.y1}
+          x2={p.x2}
+          y2={p.y2}
+          stroke={p.color}
+          strokeWidth="3"
+          opacity={0.7}
+          zindex={200}
+        />
+      ))}
+      <text
+        x="50%"
+        y="54%"
+        textAnchor="middle"
+        fill="#fff"
+        fontSize="1.15rem"
+        fontWeight="bold"
+        style={{
+          fontFamily: "Montserrat, Arial, sans-serif",
+          filter: "drop-shadow(0 2px 4px #38B6FF)",
+        }}
+      >
+        Dwight
+      </text>
+    </svg>
+  );
+};
+
+// Main Huge Waveform (center panel)
+function RollingWaveform({ playing }) {
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => setOffset(o => (o + 8) % 1600), 40);
+    return () => clearInterval(id);
+  }, [playing]);
+  // Fake waveform data
+  function getPath(off = 0) {
+    let p = "";
+    for (let i = 0; i < 1600; i += 32) {
+      const x = i / 1.45;
+      const y = 120 + (Math.sin((x + off) / 60) * 60 + Math.cos((x + off * 0.8) / 17) * 22);
+      p += `${i === 0 ? "M" : "L"}${x},${y} `;
+    }
+    return p;
+  }
+  return (
+    <svg
+      width="100%"
+      height={220}
+      viewBox="0 0 1100 220"
+      style={{
+        background: "linear-gradient(90deg,#181a1b 70%,#222 100%)",
+        borderRadius: 36,
+        boxShadow: "0 2px 22px #0007",
+        marginBottom: 24,
+        display: "block",
+      }}
+    >
+      <path
+        d={getPath(offset)}
+        stroke={colors.cobalt}
+        strokeWidth="8"
+        fill="none"
+        opacity="0.93"
+        filter="url(#glow)"
+      />
+      <defs>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+    </svg>
+  );
+}
+
+export default function DwightAudioDashboard() {
+  // Audio controls
+  const [playing, setPlaying] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [buffer, setBuffer] = useState(30);
+  // Dwight AI
+  const [dwightMessages, setDwightMessages] = useState([
+    { sender: "dwight", text: "How can I help you with your audio file?", time: "19:02" },
+  ]);
+  const [dwightInput, setDwightInput] = useState("");
+  const [dwightSpeaking, setDwightSpeaking] = useState(false);
+  const dwightInputRef = useRef();
+  // Transcription & non-verbal
+  const [transcript, setTranscript] = useState([
+    { type: "speech", text: "This is a sample audio clip." },
+    { type: "speech", text: "Welcome to Dwight Audio DVR." },
+  ]);
+  const [nonverbal, setNonverbal] = useState([
+    { sound: "footsteps", time: "00:14" },
+    { sound: "car door slam", time: "00:22" },
+    { sound: "gunshots x3", time: "00:49" },
+  ]);
+  // Saved recordings (right panel)
+  const [recordings, setRecordings] = useState([
+    { title: "Suspicious Night", length: "2:43", date: "7/18/25" },
+    { title: "Entry Log", length: "0:57", date: "7/13/25" },
+    { title: "Parking Lot", length: "1:31", date: "7/09/25" },
+  ]);
+  // Triggers (left panel)
+  const [soundTriggers, setSoundTriggers] = useState(["baby crying", "gunshots"]);
+  const [speechTriggers, setSpeechTriggers] = useState(["help", "emergency"]);
+  const [customSound, setCustomSound] = useState("");
+
+  // Handle Dwight chat
+  function sendDwight() {
+    if (dwightInput.trim()) {
+      setDwightMessages(msgs => [
+        ...msgs,
+        { sender: "user", text: dwightInput.trim(), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+      ]);
+      setDwightSpeaking(true);
+      setTimeout(() => {
+        setDwightMessages(msgs => [
+          ...msgs,
+          {
+            sender: "dwight",
+            text: `"${dwightInput.trim()}" sounds quite important master bruce. Want me to inspect the audio for you in real time?`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+        setDwightSpeaking(false);
+      }, 1500);
+      setDwightInput("");
+      if (dwightInputRef.current) {
+        dwightInputRef.current.focus();
+      }
+    }
+  }
+
+  // Add sound trigger
+  function addSoundTrigger() {
+    if (customSound.trim()) {
+      setSoundTriggers(trigs => [...trigs, customSound.trim()]);
+      setCustomSound("");
+    }
+  }
+  // Add speech trigger
+  function addSpeechTrigger(word) {
+    if (word.trim()) setSpeechTriggers(trigs => [...trigs, word.trim()]);
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: `url('${CLOUD_BG_URL}') center/cover no-repeat, linear-gradient(135deg,${colors.dark} 0%,${colors.accent} 100%)`,
+        color: colors.text,
+        fontFamily: "Montserrat, Arial, sans-serif",
+        padding: 0,
+        margin: 0,
+        boxSizing: "border-box",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* Header */}
+      <div style={{
+        width: "100%",
+        maxWidth: 1280,
+        margin: "0 auto",
+        paddingTop: 38,
+        paddingBottom: 12,
+        textAlign: "center",
+        position: "relative"
+      }}>
+        <BatLogo size={168} />
+        <h1 style={{
+          fontWeight: "900",
+          fontSize: "3.2rem",
+          letterSpacing: "2.2px",
+          color: colors.cobalt,
+          margin: "8px 0 2px 0",
+          textShadow: "0 2px 12px #000b",
+        }}>
+          Dwight Audio DVR Dashboard
+        </h1>
+        <p style={{
+          color: "#bdf",
+          fontWeight: "600",
+          fontSize: "1.23rem",
+          maxWidth: 620,
+          margin: "0 auto",
+          marginBottom: "16px",
+        }}>
+          Sleek. Techy. Wired for brilliance. Inspect, dissect, and command your audio files with Dwight AI.
+        </p>
+      </div>
+      {/* Panels Layout */}
+      <div style={{
+        width: "100%",
+        maxWidth: 1280,
+        margin: "0 auto",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
+        gap: 36,
+        padding: "0 20px",
+        flexWrap: "wrap",
+        minHeight: "700px"
+      }}>
+        {/* --- Left: Trigger Panel --- */}
+        <div style={{
+          background: "rgba(30,34,36,0.88)",
+          border: `2.5px solid ${colors.cobalt}`,
+          borderRadius: 24,
+          minWidth: 270,
+          maxWidth: 340,
+          flex: "0 1 320px",
+          marginTop: 18,
+          boxShadow: "0 2px 14px #0007",
+          padding: "26px 18px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "18px",
+        }}>
+          <h2 style={{
+            fontSize: "1.32rem",
+            color: colors.cobalt,
+            fontWeight: "700",
+            marginBottom: "7px",
+            letterSpacing: "1px"
+          }}>Triggers</h2>
+          <div>
+            <b style={{ color: "#bdf" }}>Manual Trigger:</b>
+            <button
+              style={{
+                background: colors.cobalt,
+                color: colors.gray,
+                border: "none",
+                borderRadius: "9px",
+                padding: "8px 18px",
+                fontWeight: "bold",
+                fontSize: "1.08rem",
+                cursor: "pointer",
+                marginLeft: "12px",
+                marginTop: "2px",
+                boxShadow: "0 2px 8px #0004"
+              }}
+              onClick={() => alert("Manual recording triggered!")}
+            >
+              Record Now
+            </button>
+          </div>
+          <div>
+            <b style={{ color: "#bdf" }}>Sound Activated:</b>
+            <ul style={{ margin: "7px 0 0 12px", padding: 0, listStyle: "none" }}>
+              {soundTriggers.map((trig, idx) => (
+                <li key={idx} style={{
+                  padding: "4px 0",
+                  color: colors.cobalt,
+                  fontWeight: "600",
+                  fontSize: "1.02rem"
+                }}>
+                  {trig}
+                </li>
+              ))}
+            </ul>
+            <input
+              type="text"
+              placeholder="Add sound (e.g. siren)"
+              value={customSound}
+              onChange={e => setCustomSound(e.target.value)}
+              style={{
+                width: "70%",
+                padding: "6px 12px",
+                borderRadius: "7px",
+                border: `1.5px solid ${colors.cobalt}`,
+                background: colors.black,
+                color: colors.cobalt,
+                marginRight: "8px",
+                marginTop: "4px",
+                fontWeight: "600",
+                fontSize: "1rem"
+              }}
+              onKeyDown={e => e.key === "Enter" && addSoundTrigger()}
+            />
+            <button
+              style={{
+                background: colors.cobalt,
+                color: colors.gray,
+                border: "none",
+                borderRadius: "7px",
+                padding: "7px 12px",
+                fontWeight: "bold",
+                fontSize: "1rem",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px #0004"
+              }}
+              onClick={addSoundTrigger}
+            >
+              Add
+            </button>
+          </div>
+          <div>
+            <b style={{ color: "#bdf" }}>Speech Activated:</b>
+            <ul style={{ margin: "7px 0 0 12px", padding: 0, listStyle: "none" }}>
+              {speechTriggers.map((trig, idx) => (
+                <li key={idx} style={{
+                  padding: "4px 0",
+                  color: colors.cobalt,
+                  fontWeight: "600",
+                  fontSize: "1.02rem"
+                }}>
+                  {trig}
+                </li>
+              ))}
+            </ul>
+            <input
+              type="text"
+              placeholder="Add phrase (e.g. danger)"
+              onKeyDown={e => e.key === "Enter" && addSpeechTrigger(e.target.value)}
+              style={{
+                width: "70%",
+                padding: "6px 12px",
+                borderRadius: "7px",
+                border: `1.5px solid ${colors.cobalt}`,
+                background: colors.black,
+                color: colors.cobalt,
+                marginRight: "8px",
+                marginTop: "4px",
+                fontWeight: "600",
+                fontSize: "1rem"
+              }}
+            />
+          </div>
+        </div>
+        {/* --- Center: Main Audio Panel --- */}
+        <div style={{
+          background: "rgba(30,34,36, 0.93)",
+          border: `2.7px solid ${colors.cobalt}`,
+          borderRadius: 36,
+          flex: "1 1 700px",
+          minWidth: 520,
+          maxWidth: 780,
+          marginTop: 0,
+          boxShadow: "0 2px 22px #0009",
+          padding: "36px 30px",
+          display: "flex",
+          flexDirection: "column",
+          position: "relative"
+        }}>
+          {/* Main Card Header */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            marginBottom: "12px",
+            gap: "18px"
+          }}>
+            <BatLogo size={52} />
+            <span style={{
+              fontWeight: "700",
+              fontSize: "1.62rem",
+              color: colors.cobalt,
+              letterSpacing: "1.4px"
+            }}>Audio Inspector</span>
+          </div>
+          {/* --- Waveform --- */}
+          <RollingWaveform playing={playing && !paused} />
+          {/* --- Controls --- */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "22px",
+            justifyContent: "center",
+            marginBottom: "18px"
+          }}>
+            <button
+              style={{
+                background: colors.black,
+                color: colors.cobalt,
+                border: `2px solid ${colors.cobalt}`,
+                borderRadius: "50%",
+                width: "52px",
+                height: "52px",
+                fontSize: "2rem",
+                fontWeight: "bold",
+                boxShadow: "0 2px 8px #0007",
+                cursor: "pointer"
+              }}
+              title="Rewind"
+              onClick={() => alert("Rewind")}
+            >⏪</button>
+            <button
+              style={{
+                background: playing ? colors.cobalt : colors.black,
+                color: playing ? colors.black : colors.cobalt,
+                border: `2px solid ${colors.cobalt}`,
+                borderRadius: "50%",
+                width: "62px",
+                height: "62px",
+                fontSize: "2.5rem",
+                fontWeight: "bold",
+                boxShadow: "0 2px 10px #0007",
+                cursor: "pointer"
+              }}
+              title={playing ? "Pause" : "Play"}
+              onClick={() => {
+                setPlaying(p => !p);
+                setPaused(false);
+              }}
+            >{playing ? "⏸" : "▶️"}</button>
+            <button
+              style={{
+                background: colors.black,
+                color: colors.cobalt,
+                border: `2px solid ${colors.cobalt}`,
+                borderRadius: "50%",
+                width: "52px",
+                height: "52px",
+                fontSize: "2rem",
+                fontWeight: "bold",
+                boxShadow: "0 2px 8px #0007",
+                cursor: "pointer"
+              }}
+              title="Fast Forward"
+              onClick={() => alert("Fast Forward")}
+            >⏩</button>
+            <button
+              style={{
+                background: "#3f3",
+                color: colors.gray,
+                border: `2px solid #3f3`,
+                borderRadius: "15px",
+                padding: "10px 20px",
+                fontWeight: "bold",
+                fontSize: "1.18rem",
+                boxShadow: "0 2px 8px #0006",
+                marginLeft: "22px",
+                cursor: "pointer"
+              }}
+              title="Trim Tool"
+              onClick={() => alert("Trim tool coming soon!")}
+            >✂️ Trim</button>
+          </div>
+          {/* --- Transcription --- */}
+          <div style={{
+            marginBottom: "8px",
+            textAlign: "center",
+            fontSize: "1.22rem",
+            fontWeight: "600",
+            color: "#bdf",
+            background: "#222b",
+            borderRadius: "12px",
+            padding: "10px 18px",
+            boxShadow: "0 2px 7px #0006",
+            minHeight: "52px"
+          }}>
+            {transcript.map((line, idx) => (
+              <span key={idx} style={{
+                display: "block",
+                marginBottom: "2px",
+                fontFamily: "Montserrat, Arial, sans-serif",
+                fontSize: "1.18rem",
+                color: line.type === "speech" ? colors.cobalt : "#fff"
+              }}>{line.text}</span>
+            ))}
+          </div>
+          {/* --- Non-verbal Sound Detection --- */}
+          <div style={{
+            position: "absolute",
+            top: 34,
+            right: 30,
+            background: "#222d",
+            borderRadius: "11px",
+            padding: "7px 18px",
+            color: "#bdf",
+            fontWeight: "700",
+            fontSize: "1.09rem",
+            boxShadow: "0 2px 8px #0008",
+            zIndex: 3,
+            minWidth: "170px"
+          }}>
+            <div style={{ color: colors.cobalt, fontWeight: "700", marginBottom: "3px", fontSize: "1.09rem" }}>
+              Non-Verbal Sounds:
+            </div>
+            <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+              {nonverbal.map((nv, idx) => (
+                <li key={idx} style={{ marginBottom: "2px" }}>
+                  <span style={{ color: "#fff" }}>{nv.sound}</span>
+                  <span style={{ color: "#38B6FF", marginLeft: "8px" }}>{nv.time}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {/* --- Buffer Slider --- */}
+          <div style={{
+            marginTop: "22px",
+            display: "flex",
+            alignItems: "center",
+            gap: "18px",
+            justifyContent: "center"
+          }}>
+            <span style={{
+              color: "#bdf",
+              fontWeight: "600",
+              fontSize: "1.06rem",
+              marginRight: "8px"
+            }}>Buffer Time:</span>
+            <input
+              type="range"
+              min={30}
+              max={300}
+              value={buffer}
+              onChange={e => setBuffer(Number(e.target.value))}
+              style={{
+                width: "180px",
+                accentColor: colors.cobalt,
+                background: "#222",
+              }}
+            />
+            <span style={{
+              color: colors.cobalt,
+              fontWeight: "800",
+              fontSize: "1.17rem",
+              marginLeft: "7px"
+            }}>{buffer}s</span>
+          </div>
+        </div>
+        {/* --- Right: Recordings Panel --- */}
+        <div style={{
+          background: "rgba(30,34,36,0.92)",
+          border: `2.5px solid ${colors.cobalt}`,
+          borderRadius: 24,
+          minWidth: 270,
+          maxWidth: 340,
+          flex: "0 1 320px",
+          marginTop: 18,
+          boxShadow: "0 2px 14px #0007",
+          padding: "26px 18px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "14px",
+        }}>
+          <h2 style={{
+            fontSize: "1.32rem",
+            color: colors.cobalt,
+            fontWeight: "700",
+            marginBottom: "7px",
+            letterSpacing: "1px"
+          }}>Recordings</h2>
+          <ul style={{
+            margin: 0, padding: 0, listStyle: "none",
+            overflowY: "auto", maxHeight: "320px"
+          }}>
+            {recordings.map((rec, idx) => (
+              <li key={idx} style={{
+                background: "#222c",
+                borderRadius: "10px",
+                padding: "9px 15px",
+                marginBottom: "8px",
+                boxShadow: "0 1px 6px #0003",
+                fontWeight: "600",
+                color: "#bdf",
+                fontSize: "1.11rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}>
+                <div>
+                  <span style={{ color: colors.cobalt, fontWeight: "700", marginRight: "8px" }}>{rec.title}</span>
+                  <span style={{ color: "#fff", fontWeight: "400", marginRight: "8px" }}>{rec.length}</span>
+                  <span style={{ color: "#999" }}>{rec.date}</span>
+                </div>
+                <button
+                  style={{
+                    background: colors.cobalt,
+                    color: colors.gray,
+                    border: "none",
+                    borderRadius: "7px",
+                    padding: "7px 12px",
+                    fontWeight: "bold",
+                    fontSize: "1rem",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px #0003"
+                  }}
+                  title="Inspect"
+                  onClick={() => alert(`Inspecting "${rec.title}"`)}
+                >Inspect</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      {/* --- Dwight AI Panel (bottom left) --- */}
+      <div style={{
+        position: "fixed",
+        bottom: 38,
+        left: 3,
+        zIndex: 100,
+        width: 370,
+        background: "rgba(30,34,36,0.98)",
+        border: `2.3px solid ${colors.cobalt}`,
+        borderRadius: "26px",
+        boxShadow: "0 4px 22px #000b",
+        padding: "22px 14px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "11px"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "13px", marginBottom: "7px" }}>
+          <CircularWaveform size={64} animate={dwightSpeaking} />
+          <span style={{
+            fontWeight: "700",
+            fontSize: "1.21rem",
+            color: colors.cobalt,
+            letterSpacing: "1px"
+          }}>Dwight</span>
+          <span style={{
+            color: dwightSpeaking ? colors.cobalt : "#888",
+            fontWeight: "500",
+            marginLeft: "auto",
+            fontSize: "0.98rem"
+          }}>{dwightSpeaking ? "Speaking…" : "Idle"}</span>
+        </div>
+        <div style={{
+          flex: 1,
+          overflowY: "auto",
+          maxHeight: "500px",
+          marginBottom: "7px"
+        }}>
+          {dwightMessages.map((msg, idx) => (
+            <div key={idx} style={{
+              marginBottom: "7px",
+              display: "flex",
+              flexDirection: msg.sender === "dwight" ? "row" : "row-reverse",
+              alignItems: "flex-end"
+            }}>
+              <div style={{
+                maxWidth: "75%",
+                padding: "7px 13px",
+                borderRadius: "10px",
+                background: msg.sender === "dwight"
+                  ? "linear-gradient(90deg,#38B6FF44 60%,#181a1b 100%)"
+                  : "linear-gradient(90deg,#222 45%,#38B6FF 100%)",
+                color: msg.sender === "dwight" ? "#38B6FF" : "#fff",
+                fontWeight: msg.sender === "dwight" ? "600" : "500",
+                fontSize: "1.04rem",
+                boxShadow: "0 1px 7px #0004",
+                marginLeft: msg.sender === "dwight" ? "0" : "auto",
+                marginRight: msg.sender === "dwight" ? "auto" : "0",
+              }}>
+                {msg.text}
+                <span style={{
+                  fontSize: "0.73rem",
+                  color: "#bbb",
+                  marginLeft: "7px",
+                  fontWeight: "400"
+                }}>{msg.time}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Input & tools */}
+        <div style={{
+          display: "flex", gap: "7px", alignItems: "center"
+        }}>
+          <button
+            title="Microphone"
+            style={{
+              background: colors.gray,
+              border: `1.7px solid ${colors.cobalt}`,
+              borderRadius: "50%",
+              width: "36px",
+              height: "36px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: colors.cobalt,
+              fontSize: "1.22rem",
+              boxShadow: "0 2px 6px #0007"
+            }}
+            onClick={() => alert("Voice input coming soon!")}
+          >
+            <span role="img" aria-label="mic">🎤</span>
+          </button>
+          <input
+            ref={dwightInputRef}
+            type="text"
+            placeholder="Talk to Dwight…"
+            value={dwightInput}
+            onChange={e => setDwightInput(e.target.value)}
+            style={{
+              flex: 1,
+              padding: "7px 13px",
+              borderRadius: "7px",
+              border: `1.5px solid ${colors.cobalt}`,
+              background: colors.black,
+              color: colors.cobalt,
+              fontWeight: "600",
+              fontSize: "1rem",
+              outline: "none",
+              boxShadow: "0 1px 6px #0004"
+            }}
+            onKeyDown={e => e.key === "Enter" && sendDwight()}
+          />
+          <button
+            style={{
+              background: colors.cobalt,
+              color: colors.gray,
+              border: "none",
+              borderRadius: "7px",
+              padding: "7px 13px",
+              fontWeight: "bold",
+              fontSize: "1rem",
+              cursor: "pointer",
+              boxShadow: "0 2px 8px #0007",
+            }}
+            onClick={sendDwight}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+      {/* --- Bat logo watermark --- */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: "18px",
+          right: "38px",
+          opacity: 0.11,
+          pointerEvents: "none",
+          zIndex: 1
+        }}
+      >
+        <BatLogo size={128} />
+      </div>
+    </div>
+  );
+}
