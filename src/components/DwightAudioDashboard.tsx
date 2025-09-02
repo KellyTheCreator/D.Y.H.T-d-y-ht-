@@ -407,6 +407,10 @@ export default function DwightAudioDashboard() {
   const [trimEnd, setTrimEnd] = useState(100);
   const [showTrimTool, setShowTrimTool] = useState(false);
   
+  // Dwight's state management
+  const [isDwightAwake, setIsDwightAwake] = useState(true); // Dwight starts awake
+  const [isRemembering, setIsRemembering] = useState(false); // Track if currently remembering
+  
   // Sound trigger detection state
   const [soundDetection, setSoundDetection] = useState({
     isActive: false,
@@ -463,20 +467,45 @@ export default function DwightAudioDashboard() {
       const utterance = new SpeechSynthesisUtterance(text);
       speechSynthRef.current = utterance;
       
-      // Configure voice settings for Dwight
-      utterance.rate = 0.9;
-      utterance.pitch = 0.8;
+      // Configure voice settings for Dwight - British butler style
+      utterance.rate = 0.85; // Slightly slower for dignity
+      utterance.pitch = 0.6; // Lower pitch for older, more authoritative voice
       utterance.volume = 0.8;
       
-      // Try to find a suitable voice
+      // Try to find a suitable voice - prefer British or deep male voices
       const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.name.toLowerCase().includes('male') || 
-        voice.name.toLowerCase().includes('deep') ||
-        voice.name.toLowerCase().includes('alex')
-      );
+      const preferredVoice = voices.find(voice => {
+        const voiceName = voice.name.toLowerCase();
+        const voiceLang = voice.lang.toLowerCase();
+        
+        // First preference: British English voices
+        if (voiceLang.includes('en-gb') || voiceName.includes('british') || voiceName.includes('uk')) {
+          return true;
+        }
+        
+        // Second preference: Male voices
+        if (voiceName.includes('male') || voiceName.includes('man') || 
+            voiceName.includes('deep') || voiceName.includes('alex') ||
+            voiceName.includes('daniel') || voiceName.includes('arthur')) {
+          return true;
+        }
+        
+        return false;
+      });
+      
       if (preferredVoice) {
         utterance.voice = preferredVoice;
+        console.log('Using voice:', preferredVoice.name, preferredVoice.lang);
+      } else {
+        // Fallback: try to find any male-sounding voice
+        const fallbackVoice = voices.find(voice => 
+          !voice.name.toLowerCase().includes('female') && 
+          !voice.name.toLowerCase().includes('woman') &&
+          !voice.name.toLowerCase().includes('girl')
+        );
+        if (fallbackVoice) {
+          utterance.voice = fallbackVoice;
+        }
       }
       
       utterance.onstart = () => {
@@ -692,17 +721,19 @@ export default function DwightAudioDashboard() {
     loadTriggers();
     checkAiModelsStatus();
     
-    // Start continuous buffering as requested - always recording, just forgetting old data
-    audioBuffer.startBuffering().then(() => {
-      // Initialize sound detection after buffering starts
-      setTimeout(() => {
-        initializeSoundDetection();
-        initializeSpeechRecognition();
-        startSpeechRecognition();
-      }, 1000);
-    }).catch(error => {
-      console.error("Failed to start audio buffering:", error);
-    });
+    // Start continuous buffering only if Dwight is awake (which he is by default)
+    if (isDwightAwake) {
+      audioBuffer.startBuffering().then(() => {
+        // Initialize sound detection after buffering starts
+        setTimeout(() => {
+          initializeSoundDetection();
+          initializeSpeechRecognition();
+          startSpeechRecognition();
+        }, 1000);
+      }).catch(error => {
+        console.error("Failed to start audio buffering:", error);
+      });
+    }
     
     return () => {
       // Cleanup buffering and sound detection on unmount
@@ -714,7 +745,7 @@ export default function DwightAudioDashboard() {
         soundContextRef.current.close();
       }
     };
-  }, []);
+  }, [isDwightAwake]); // Add isDwightAwake as dependency
 
   // Check AI models status
   const checkAiModelsStatus = async () => {
@@ -904,63 +935,64 @@ export default function DwightAudioDashboard() {
 
   // Handle manual recording - now uses buffering system with improved error handling
   const handleManualRecord = async () => {
-    if (audioRecorder.isRecording) {
-      audioRecorder.stopRecording();
-    } else {
-      try {
-        // Check if buffering is active, if not start it
-        if (!audioBuffer.isBuffering) {
-          await audioBuffer.startBuffering();
-          // Give buffer time to initialize
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-        // Trigger recording from buffer - saves from buffer start to now
-        const audioBlob = await audioBuffer.triggerRecording();
-        
-        // Create URL for playback
-        const audioUrl = URL.createObjectURL(audioBlob);
-        
-        // Save the recording to the database
-        const recordTitle = `Recording ${new Date().toISOString()}`;
-        const filePath = `/tmp/recordings/${recordTitle.replace(/[^a-zA-Z0-9]/g, '_')}.webm`;
-        
-        try {
-          // In a real implementation, you'd save the blob to the file system
-          // For now, we'll simulate this and add to recordings list
-          const newRecording: AudioRecord = {
-            title: recordTitle,
-            file_path: filePath,
-            duration: buffer,
-            created_at: new Date().toISOString(),
-            transcript: ""
-          };
-          
-          setRecordings(prev => [newRecording, ...prev]);
-          
-          console.log("Triggered recording from buffer:", audioBlob.size, "bytes");
-          
-          // Add to transcript with success message
-          setTranscript([
-            { type: "speech", text: `Successfully saved ${buffer}s audio recording from buffer.` },
-            ...transcript
-          ]);
-          
-          // Add to non-verbal sounds
-          setNonverbal(prev => [
-            { sound: "recording saved", time: new Date().toLocaleTimeString() },
-            ...prev
-          ]);
-          
-        } catch (dbError) {
-          console.error("Failed to save recording to database:", dbError);
-          alert(`Recorded ${Math.round(audioBlob.size / 1024)}KB from ${buffer}s buffer! (Note: Database save failed)`);
-        }
-        
-      } catch (error) {
-        console.error("Failed to trigger recording:", error);
-        alert("Failed to access microphone for buffered recording. Please check microphone permissions.");
+    if (!isDwightAwake) {
+      alert("Dwight is sleeping. Please wake him up first!");
+      return;
+    }
+    
+    try {
+      // Check if buffering is active, if not start it
+      if (!audioBuffer.isBuffering) {
+        await audioBuffer.startBuffering();
+        // Give buffer time to initialize
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
+      
+      // Trigger recording from buffer - saves from buffer start to now
+      const audioBlob = await audioBuffer.triggerRecording();
+      
+      // Create URL for playback
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // Save the recording to the database
+      const recordTitle = `Dwight Memory ${new Date().toISOString()}`;
+      const filePath = `/tmp/recordings/${recordTitle.replace(/[^a-zA-Z0-9]/g, '_')}.webm`;
+      
+      try {
+        // In a real implementation, you'd save the blob to the file system
+        // For now, we'll simulate this and add to recordings list
+        const newRecording: AudioRecord = {
+          title: recordTitle,
+          file_path: filePath,
+          duration: buffer,
+          created_at: new Date().toISOString(),
+          transcript: ""
+        };
+        
+        setRecordings(prev => [newRecording, ...prev]);
+        
+        console.log("Dwight remembered recording from buffer:", audioBlob.size, "bytes");
+        
+        // Add to transcript with success message
+        setTranscript([
+          { type: "speech", text: `Dwight successfully remembered ${buffer}s of audio.` },
+          ...transcript
+        ]);
+        
+        // Add to non-verbal sounds
+        setNonverbal(prev => [
+          { sound: "memory saved by Dwight", time: new Date().toLocaleTimeString() },
+          ...prev
+        ]);
+        
+      } catch (dbError) {
+        console.error("Failed to save recording to database:", dbError);
+        alert(`Dwight remembered ${Math.round(audioBlob.size / 1024)}KB from ${buffer}s buffer! (Note: Database save failed)`);
+      }
+      
+    } catch (error) {
+      console.error("Failed to trigger recording:", error);
+      alert("Dwight couldn't access the microphone. Please check microphone permissions.");
     }
   };
 
@@ -1581,7 +1613,7 @@ export default function DwightAudioDashboard() {
             <input
               type="range"
               min={30}
-              max={300}
+              max={3000}
               value={buffer}
               onChange={e => {
                 const newBuffer = Number(e.target.value);
@@ -1612,16 +1644,17 @@ export default function DwightAudioDashboard() {
                 width: "12px",
                 height: "12px",
                 borderRadius: "50%",
-                backgroundColor: audioBuffer.isBuffering ? "#4FC3F7" : "#666",
-                boxShadow: audioBuffer.isBuffering ? "0 0 8px #4FC3F7" : "none",
-                animation: audioBuffer.isBuffering ? "pulse 2s infinite" : "none"
+                backgroundColor: (audioBuffer.isBuffering && isDwightAwake) ? "#4FC3F7" : "#666",
+                boxShadow: (audioBuffer.isBuffering && isDwightAwake) ? "0 0 8px #4FC3F7" : "none",
+                animation: (audioBuffer.isBuffering && isDwightAwake) ? "pulse 2s infinite" : "none"
               }}></div>
               <span style={{
-                color: audioBuffer.isBuffering ? colors.cobalt : "#666",
+                color: (audioBuffer.isBuffering && isDwightAwake) ? colors.cobalt : "#666",
                 fontWeight: "600",
                 fontSize: "0.95rem"
               }}>
-                {audioBuffer.isBuffering ? 
+                {!isDwightAwake ? "Dwight Sleeping" : 
+                 audioBuffer.isBuffering ? 
                   `Buffering ${Math.round(audioBuffer.getBufferFill())}%` : 
                   "Buffer Offline"
                 }
@@ -1661,12 +1694,14 @@ export default function DwightAudioDashboard() {
             minWidth: "120px"
           }}>Triggers</h2>
           
-          {/* Manual Trigger */}
+          {/* Manual Trigger and Kill Switch */}
           <div style={{ flex: "0 0 auto" }}>
-            <b style={{ color: "#bdf", display: "block", marginBottom: "8px" }}>Manual Trigger:</b>
+            <b style={{ color: "#bdf", display: "block", marginBottom: "8px" }}>Dwight Controls:</b>
+            
+            {/* Kill Switch */}
             <button
               style={{
-                background: audioBuffer.isBuffering ? "#ff4444" : colors.cobalt,
+                background: isDwightAwake ? "#4FC3F7" : "#666",
                 color: "#fff",
                 border: "none",
                 borderRadius: "9px",
@@ -1674,12 +1709,89 @@ export default function DwightAudioDashboard() {
                 fontWeight: "bold",
                 fontSize: "1.08rem",
                 cursor: "pointer",
-                boxShadow: "0 2px 8px #0004"
+                boxShadow: "0 2px 8px #0004",
+                marginBottom: "8px",
+                width: "100%"
               }}
-              onClick={handleManualRecord}
+              onClick={() => {
+                const newAwakeState = !isDwightAwake;
+                setIsDwightAwake(newAwakeState);
+                
+                if (newAwakeState) {
+                  // Dwight is waking up - start buffering if not already started
+                  if (!audioBuffer.isBuffering) {
+                    audioBuffer.startBuffering().then(() => {
+                      setTimeout(() => {
+                        initializeSoundDetection();
+                        initializeSpeechRecognition();
+                        startSpeechRecognition();
+                      }, 1000);
+                    }).catch(error => {
+                      console.error("Failed to start audio buffering:", error);
+                    });
+                  }
+                  
+                  setNonverbal(prev => [
+                    { sound: "Dwight is now awake and listening", time: new Date().toLocaleTimeString() },
+                    ...prev.slice(0, 9)
+                  ]);
+                } else {
+                  // Dwight is going to sleep - stop all monitoring
+                  audioBuffer.stopBuffering();
+                  stopSoundDetection();
+                  stopSpeechRecognition();
+                  setIsRemembering(false);
+                  
+                  setNonverbal(prev => [
+                    { sound: "Dwight has gone to sleep", time: new Date().toLocaleTimeString() },
+                    ...prev.slice(0, 9)
+                  ]);
+                }
+              }}
             >
-              {audioBuffer.isBuffering ? "📡 Trigger Save" : "🎤 Start Buffer"}
+              {isDwightAwake ? "😴 Dwight's gone" : "👁️ Dwight is awake"}
             </button>
+            
+            {/* Remember/Forget Button */}
+            <button
+              style={{
+                background: isRemembering ? "#ff4444" : colors.cobalt,
+                color: "#fff",
+                border: "none",
+                borderRadius: "9px",
+                padding: "10px 20px",
+                fontWeight: "bold",
+                fontSize: "1.08rem",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px #0004",
+                opacity: isDwightAwake ? 1 : 0.5,
+                width: "100%"
+              }}
+              disabled={!isDwightAwake}
+              onClick={() => {
+                if (!isDwightAwake) return;
+                
+                if (isRemembering) {
+                  // Stop remembering
+                  setIsRemembering(false);
+                  setNonverbal(prev => [
+                    { sound: "Dwight stopped remembering", time: new Date().toLocaleTimeString() },
+                    ...prev.slice(0, 9)
+                  ]);
+                } else {
+                  // Start remembering - trigger recording from buffer
+                  setIsRemembering(true);
+                  handleManualRecord();
+                  setNonverbal(prev => [
+                    { sound: "Dwight is now remembering", time: new Date().toLocaleTimeString() },
+                    ...prev.slice(0, 9)
+                  ]);
+                }
+              }}
+            >
+              {isRemembering ? "🧠 Forget this Dwight" : "💭 Remember this Dwight"}
+            </button>
+            
             <div style={{ 
               marginTop: "8px", 
               fontSize: "0.85rem", 
