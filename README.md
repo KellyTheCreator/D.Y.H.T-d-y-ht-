@@ -181,6 +181,7 @@ Backend (Rust/Tauri)
 
 - **[Installation Guide](./INSTALLATION.md)** - Complete setup instructions
 - **[Setup Guide](./SETUP.md)** - Developer and advanced configuration
+- **[AI Models Integration](./AI_MODELS.md)** - How to plug in your AI models
 - **[User Manual](./docs/USER_GUIDE.md)** - Detailed feature documentation
 - **[API Documentation](./docs/API.md)** - Integration and development
 
