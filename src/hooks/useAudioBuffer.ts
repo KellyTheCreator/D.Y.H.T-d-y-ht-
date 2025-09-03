@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 
 export interface AudioBufferState {
   isBuffering: boolean;
-  bufferSize: number; // in seconds (30-300)
+  bufferSize: number; // in seconds (30-3000)
   currentBuffer: Blob[];
   bufferStartTime: number;
   isTriggered: boolean;
@@ -122,7 +122,7 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
 
   // Update buffer size
   const updateBufferSize = useCallback((newSize: number) => {
-    const clampedSize = Math.max(30, Math.min(300, newSize));
+    const clampedSize = Math.max(30, Math.min(3000, newSize));
     setState(prev => ({
       ...prev,
       bufferSize: clampedSize
