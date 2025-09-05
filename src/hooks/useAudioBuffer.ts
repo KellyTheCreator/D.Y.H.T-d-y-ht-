@@ -24,14 +24,41 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
   const bufferRef = useRef<{ blob: Blob; timestamp: number }[]>([]);
   const intervalRef = useRef<NodeJS.Timeout>();
 
+  // Check microphone permissions
+  const checkMicrophonePermission = useCallback(async () => {
+    try {
+      const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      return permissionStatus.state;
+    } catch (error) {
+      console.warn('Permission API not supported, trying direct access');
+      return 'unknown';
+    }
+  }, []);
+
   // Start continuous buffering
   const startBuffering = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Check microphone permission first
+      const permissionState = await checkMicrophonePermission();
+      if (permissionState === 'denied') {
+        throw new Error('Microphone access denied. Please enable microphone permissions in your browser settings and refresh the page.');
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        } 
+      });
       streamRef.current = stream;
       
+      const supportedMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+        ? 'audio/webm;codecs=opus' 
+        : 'audio/webm';
+        
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
+        mimeType: supportedMimeType
       });
       mediaRecorderRef.current = mediaRecorder;
 
@@ -52,6 +79,10 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
         }
       };
 
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error during buffering:', event);
+      };
+
       mediaRecorder.start();
       
       // Record in 1-second intervals
@@ -69,9 +100,21 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
 
     } catch (error) {
       console.error('Failed to start buffering:', error);
-      throw error;
+      
+      let errorMessage = 'Failed to start audio buffering: ';
+      if (error.name === 'NotAllowedError') {
+        errorMessage += 'Microphone access denied. Please enable microphone permissions and try again.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage += 'No microphone found. Please connect a microphone and try again.';
+      } else if (error.name === 'NotReadableError') {
+        errorMessage += 'Microphone is already in use by another application.';
+      } else {
+        errorMessage += error.message || 'Unknown error';
+      }
+      
+      throw new Error(errorMessage);
     }
-  }, [state.bufferSize]);
+  }, [state.bufferSize, checkMicrophonePermission]);
 
   // Stop buffering
   const stopBuffering = useCallback(() => {
@@ -168,5 +211,6 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
     updateBufferSize,
     getBufferDuration,
     getBufferFill,
+    checkMicrophonePermission,
   };
 };

@@ -451,11 +451,11 @@ export default function DwightAudioDashboard() {
   const [speechTriggers, setSpeechTriggers] = useState<string[]>(["help", "emergency"]);
   const [customSound, setCustomSound] = useState("");
   const [aiModelsStatus, setAiModelsStatus] = useState({
-    whisper: "unknown",
-    llama: "unknown", 
-    mistral: "unknown",
-    gemma: "unknown",
-    rag: "unknown"
+    whisper: "checking",
+    llama: "checking", 
+    mistral: "checking",
+    gemma: "checking",
+    rag: "checking"
   });
 
   // Text-to-speech function for Dwight
@@ -732,6 +732,10 @@ export default function DwightAudioDashboard() {
         }, 1000);
       }).catch(error => {
         console.error("Failed to start audio buffering:", error);
+        setNonverbal(prev => [
+          { sound: "audio buffer failed to start", time: new Date().toLocaleTimeString() },
+          ...prev.slice(0, 9)
+        ]);
       });
     }
     
@@ -747,39 +751,109 @@ export default function DwightAudioDashboard() {
     };
   }, [isDwightAwake]); // Add isDwightAwake as dependency
 
-  // Check AI models status
+  // Check AI models status with better detection
   const checkAiModelsStatus = async () => {
     try {
-      // Check Whisper status
+      const newStatus = {
+        whisper: "checking",
+        llama: "checking", 
+        mistral: "checking",
+        gemma: "checking",
+        rag: "checking"
+      };
+      
+      // Update UI to show checking status
+      setAiModelsStatus(prev => ({ ...prev, ...newStatus }));
+      
+      // Check Whisper status first
       try {
-        await getWhisperStatus();
+        const whisperStatus = await getWhisperStatus();
+        // If we get any response from Whisper, consider it active
         setAiModelsStatus(prev => ({ ...prev, whisper: "active" }));
-      } catch {
+        console.log('Whisper status:', whisperStatus);
+      } catch (whisperError) {
+        console.log('Whisper not available:', whisperError.message);
         setAiModelsStatus(prev => ({ ...prev, whisper: "inactive" }));
       }
       
       // Check if other models are available by trying to get model list
       try {
         const models = await getAiModels();
+        console.log('Available AI models:', models);
+        
+        // Check for specific models by name patterns
         const modelStatus = {
-          llama: models.some(m => m.name.toLowerCase().includes('llama')) ? "active" : "inactive",
-          mistral: models.some(m => m.name.toLowerCase().includes('mistral') || m.name.toLowerCase().includes('mixtral')) ? "active" : "inactive", 
-          gemma: models.some(m => m.name.toLowerCase().includes('gemma')) ? "active" : "inactive",
-          rag: models.some(m => m.model_type === 'rag') ? "active" : "inactive"
+          llama: models.some(m => {
+            const name = m.name.toLowerCase();
+            return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
+          }) ? "active" : "inactive",
+          
+          mistral: models.some(m => {
+            const name = m.name.toLowerCase();
+            return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
+          }) ? "active" : "inactive",
+          
+          gemma: models.some(m => {
+            const name = m.name.toLowerCase();
+            return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
+          }) ? "active" : "inactive",
+          
+          rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
         };
+        
         setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
-      } catch {
-        // If models endpoint fails, assume basic functionality only
-        setAiModelsStatus(prev => ({ 
-          ...prev, 
-          llama: "inactive", 
-          mistral: "inactive", 
-          gemma: "inactive", 
-          rag: "inactive" 
-        }));
+        
+        // If no models found, try alternative detection
+        if (models.length === 0) {
+          console.log('No models returned, trying alternative detection...');
+          
+          // Try to detect models by attempting basic operations
+          try {
+            // Try a simple chat to detect if any model is available
+            const testResponse = await chatWithDwight("test");
+            if (testResponse && testResponse.message) {
+              setAiModelsStatus(prev => ({ 
+                ...prev, 
+                llama: "active" // Assume at least one model is working
+              }));
+            }
+          } catch (chatError) {
+            console.log('Chat test failed:', chatError.message);
+          }
+        }
+        
+      } catch (modelsError) {
+        console.log('Models endpoint not available:', modelsError.message);
+        
+        // If models endpoint fails, try individual model tests
+        const individualTests = [
+          { name: 'llama', test: () => chatWithLlama('test', 'llama3') },
+          { name: 'mistral', test: () => chatWithLlama('test', 'mistral') },
+          { name: 'gemma', test: () => chatWithLlama('test', 'gemma') },
+        ];
+        
+        for (const { name, test } of individualTests) {
+          try {
+            await test();
+            setAiModelsStatus(prev => ({ ...prev, [name]: "active" }));
+            console.log(`${name} model is active`);
+          } catch (testError) {
+            setAiModelsStatus(prev => ({ ...prev, [name]: "inactive" }));
+            console.log(`${name} model test failed:`, testError.message);
+          }
+        }
       }
+      
     } catch (error) {
       console.error("Failed to check AI models status:", error);
+      // Set all to inactive if global check fails
+      setAiModelsStatus({
+        whisper: "inactive",
+        llama: "inactive", 
+        mistral: "inactive",
+        gemma: "inactive",
+        rag: "inactive"
+      });
     }
   };
 
@@ -941,15 +1015,43 @@ export default function DwightAudioDashboard() {
     }
     
     try {
+      // Check microphone permission first
+      const permissionState = await audioBuffer.checkMicrophonePermission();
+      if (permissionState === 'denied') {
+        alert("Microphone access denied. Please enable microphone permissions in your browser settings and refresh the page.");
+        return;
+      }
+      
       // Check if buffering is active, if not start it
       if (!audioBuffer.isBuffering) {
-        await audioBuffer.startBuffering();
-        // Give buffer time to initialize
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        setNonverbal(prev => [
+          { sound: "starting audio buffer...", time: new Date().toLocaleTimeString() },
+          ...prev.slice(0, 9)
+        ]);
+        
+        try {
+          await audioBuffer.startBuffering();
+          // Give buffer time to initialize
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          setNonverbal(prev => [
+            { sound: "audio buffer started", time: new Date().toLocaleTimeString() },
+            ...prev.slice(0, 9)
+          ]);
+        } catch (bufferError) {
+          console.error('Failed to start buffer:', bufferError);
+          alert(bufferError.message || "Failed to start audio buffering. Please check your microphone.");
+          return;
+        }
       }
       
       // Trigger recording from buffer - saves from buffer start to now
       const audioBlob = await audioBuffer.triggerRecording();
+      
+      if (!audioBlob || audioBlob.size === 0) {
+        alert("No audio data available. Please ensure your microphone is working and try again.");
+        return;
+      }
       
       // Create URL for playback
       const audioUrl = URL.createObjectURL(audioBlob);
@@ -975,7 +1077,7 @@ export default function DwightAudioDashboard() {
         
         // Add to transcript with success message
         setTranscript([
-          { type: "speech", text: `Dwight successfully remembered ${buffer}s of audio.` },
+          { type: "speech", text: `Dwight successfully remembered ${buffer}s of audio (${Math.round(audioBlob.size / 1024)}KB).` },
           ...transcript
         ]);
         
@@ -992,7 +1094,19 @@ export default function DwightAudioDashboard() {
       
     } catch (error) {
       console.error("Failed to trigger recording:", error);
-      alert("Dwight couldn't access the microphone. Please check microphone permissions.");
+      
+      let errorMessage = "Dwight couldn't access the microphone. ";
+      if (error.message && error.message.includes('denied')) {
+        errorMessage += "Please enable microphone permissions in your browser settings and refresh the page.";
+      } else if (error.message && error.message.includes('NotFound')) {
+        errorMessage += "No microphone found. Please connect a microphone and try again.";
+      } else if (error.message && error.message.includes('already in use')) {
+        errorMessage += "Microphone is already in use by another application.";
+      } else {
+        errorMessage += "Please check microphone permissions and try again.";
+      }
+      
+      alert(errorMessage);
     }
   };
 
@@ -1550,7 +1664,6 @@ export default function DwightAudioDashboard() {
             </ul>
           </div>
           
-          {/* --- AI Models Status Indicator --- */}
           <div style={{
             position: "absolute",
             top: 34,
@@ -1565,33 +1678,76 @@ export default function DwightAudioDashboard() {
             zIndex: 3,
             minWidth: "140px"
           }}>
-            <div style={{ color: colors.cobalt, fontWeight: "700", marginBottom: "4px", fontSize: "0.9rem" }}>
-              AI Models Status:
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "space-between",
+              marginBottom: "4px" 
+            }}>
+              <span style={{ color: colors.cobalt, fontWeight: "700", fontSize: "0.9rem" }}>
+                AI Models Status:
+              </span>
+              <button
+                onClick={checkAiModelsStatus}
+                style={{
+                  background: "none",
+                  border: `1px solid ${colors.cobalt}`,
+                  borderRadius: "4px",
+                  color: colors.cobalt,
+                  fontSize: "0.7rem",
+                  padding: "2px 6px",
+                  cursor: "pointer",
+                  fontWeight: "600"
+                }}
+                title="Refresh model status"
+              >
+                🔄
+              </button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
               <div>
-                <span style={{ color: aiModelsStatus.whisper === "active" ? "#4FC3F7" : "#666" }}>
-                  {aiModelsStatus.whisper === "active" ? "🟢" : "🔴"} Whisper
+                <span style={{ 
+                  color: aiModelsStatus.whisper === "active" ? "#4FC3F7" : 
+                        aiModelsStatus.whisper === "checking" ? "#FFA726" : "#666" 
+                }}>
+                  {aiModelsStatus.whisper === "active" ? "🟢" : 
+                   aiModelsStatus.whisper === "checking" ? "🟡" : "🔴"} Whisper
                 </span>
               </div>
               <div>
-                <span style={{ color: aiModelsStatus.llama === "active" ? "#4FC3F7" : "#666" }}>
-                  {aiModelsStatus.llama === "active" ? "🟢" : "🔴"} Llama3
+                <span style={{ 
+                  color: aiModelsStatus.llama === "active" ? "#4FC3F7" : 
+                        aiModelsStatus.llama === "checking" ? "#FFA726" : "#666" 
+                }}>
+                  {aiModelsStatus.llama === "active" ? "🟢" : 
+                   aiModelsStatus.llama === "checking" ? "🟡" : "🔴"} Llama3
                 </span>
               </div>
               <div>
-                <span style={{ color: aiModelsStatus.mistral === "active" ? "#4FC3F7" : "#666" }}>
-                  {aiModelsStatus.mistral === "active" ? "🟢" : "🔴"} Mistral
+                <span style={{ 
+                  color: aiModelsStatus.mistral === "active" ? "#4FC3F7" : 
+                        aiModelsStatus.mistral === "checking" ? "#FFA726" : "#666" 
+                }}>
+                  {aiModelsStatus.mistral === "active" ? "🟢" : 
+                   aiModelsStatus.mistral === "checking" ? "🟡" : "🔴"} Mistral
                 </span>
               </div>
               <div>
-                <span style={{ color: aiModelsStatus.gemma === "active" ? "#4FC3F7" : "#666" }}>
-                  {aiModelsStatus.gemma === "active" ? "🟢" : "🔴"} Gemma
+                <span style={{ 
+                  color: aiModelsStatus.gemma === "active" ? "#4FC3F7" : 
+                        aiModelsStatus.gemma === "checking" ? "#FFA726" : "#666" 
+                }}>
+                  {aiModelsStatus.gemma === "active" ? "🟢" : 
+                   aiModelsStatus.gemma === "checking" ? "🟡" : "🔴"} Gemma
                 </span>
               </div>
               <div>
-                <span style={{ color: aiModelsStatus.rag === "active" ? "#4FC3F7" : "#666" }}>
-                  {aiModelsStatus.rag === "active" ? "🟢" : "🔴"} RAG
+                <span style={{ 
+                  color: aiModelsStatus.rag === "active" ? "#4FC3F7" : 
+                        aiModelsStatus.rag === "checking" ? "#FFA726" : "#666" 
+                }}>
+                  {aiModelsStatus.rag === "active" ? "🟢" : 
+                   aiModelsStatus.rag === "checking" ? "🟡" : "🔴"} RAG
                 </span>
               </div>
             </div>
@@ -2048,27 +2204,78 @@ export default function DwightAudioDashboard() {
               fontSize: "1.1rem", // Reduced from 1.22rem
               boxShadow: "0 2px 6px #0007"
             }}
-            onClick={() => {
+            onClick={async () => {
               // Start voice input for Dwight chat
               if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-                const recognition = new SpeechRecognition();
-                recognition.continuous = false;
-                recognition.interimResults = false;
-                recognition.lang = 'en-US';
-                
-                recognition.onresult = (event: any) => {
-                  const transcript = event.results[0][0].transcript;
-                  setDwightInput(transcript);
-                };
-                
-                recognition.onerror = (event: any) => {
-                  console.error('Speech recognition error:', event.error);
-                };
-                
-                recognition.start();
+                try {
+                  // Check microphone permission first
+                  const permissionState = await audioRecorder.checkMicrophonePermission();
+                  if (permissionState === 'denied') {
+                    alert('Microphone access denied. Please enable microphone permissions in your browser settings and try again.');
+                    return;
+                  }
+                  
+                  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+                  const recognition = new SpeechRecognition();
+                  recognition.continuous = false;
+                  recognition.interimResults = false;
+                  recognition.lang = 'en-US';
+                  recognition.maxAlternatives = 1;
+                  
+                  // Add visual feedback
+                  const originalText = dwightInputRef.current?.placeholder || "Talk to Dwight…";
+                  if (dwightInputRef.current) {
+                    dwightInputRef.current.placeholder = "🎤 Listening...";
+                  }
+                  
+                  recognition.onresult = (event: any) => {
+                    const transcript = event.results[0][0].transcript;
+                    setDwightInput(transcript);
+                    if (dwightInputRef.current) {
+                      dwightInputRef.current.placeholder = originalText;
+                      dwightInputRef.current.focus();
+                    }
+                  };
+                  
+                  recognition.onerror = (event: any) => {
+                    console.error('Speech recognition error:', event.error);
+                    if (dwightInputRef.current) {
+                      dwightInputRef.current.placeholder = originalText;
+                    }
+                    
+                    let errorMessage = "Voice input failed: ";
+                    switch (event.error) {
+                      case 'not-allowed':
+                        errorMessage += "Microphone access denied. Please enable microphone permissions.";
+                        break;
+                      case 'no-speech':
+                        errorMessage += "No speech detected. Please try speaking again.";
+                        break;
+                      case 'audio-capture':
+                        errorMessage += "Audio capture failed. Please check your microphone.";
+                        break;
+                      case 'network':
+                        errorMessage += "Network error. Please check your connection.";
+                        break;
+                      default:
+                        errorMessage += event.error || "Unknown error. Please try again.";
+                    }
+                    alert(errorMessage);
+                  };
+                  
+                  recognition.onend = () => {
+                    if (dwightInputRef.current) {
+                      dwightInputRef.current.placeholder = originalText;
+                    }
+                  };
+                  
+                  recognition.start();
+                } catch (error) {
+                  console.error('Failed to start voice recognition:', error);
+                  alert('Failed to start voice input. Please check your microphone permissions and try again.');
+                }
               } else {
-                alert("Speech recognition not supported in this browser");
+                alert("Voice input not supported in this browser. Please use a modern browser like Chrome or Edge.");
               }
             }}
           >

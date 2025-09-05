@@ -38,15 +38,43 @@ export const useAudioRecorder = () => {
     }
   }, []);
 
+  // Check microphone permissions
+  const checkMicrophonePermission = useCallback(async () => {
+    try {
+      const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      return permissionStatus.state;
+    } catch (error) {
+      console.warn('Permission API not supported, trying direct access');
+      return 'unknown';
+    }
+  }, []);
+
   // Start recording
   const startRecording = useCallback(async () => {
     try {
+      // Check microphone permission first
+      const permissionState = await checkMicrophonePermission();
+      if (permissionState === 'denied') {
+        alert('Microphone access denied. Please enable microphone permissions in your browser settings and refresh the page.');
+        return;
+      }
+
       await initializeAudio();
       
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        } 
+      });
       streamRef.current = stream;
       
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+          ? 'audio/webm;codecs=opus' 
+          : 'audio/webm'
+      });
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -63,7 +91,9 @@ export const useAudioRecorder = () => {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
+        const blob = new Blob(chunksRef.current, { 
+          type: mediaRecorder.mimeType || 'audio/wav' 
+        });
         const audioUrl = URL.createObjectURL(blob);
         setState(prev => ({ ...prev, audioUrl, isRecording: false }));
         
@@ -73,6 +103,12 @@ export const useAudioRecorder = () => {
         }
       };
 
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event);
+        alert('Recording failed. Please try again.');
+        setState(prev => ({ ...prev, isRecording: false }));
+      };
+
       mediaRecorder.start();
       setState(prev => ({ ...prev, isRecording: true }));
       
@@ -80,9 +116,18 @@ export const useAudioRecorder = () => {
       updateWaveform();
     } catch (error) {
       console.error('Failed to start recording:', error);
-      alert('Failed to access microphone. Please check permissions.');
+      
+      if (error.name === 'NotAllowedError') {
+        alert('Microphone access denied. Please enable microphone permissions and try again.');
+      } else if (error.name === 'NotFoundError') {
+        alert('No microphone found. Please connect a microphone and try again.');
+      } else if (error.name === 'NotReadableError') {
+        alert('Microphone is already in use by another application. Please close other apps using the microphone and try again.');
+      } else {
+        alert(`Failed to access microphone: ${error.message || 'Unknown error'}. Please check your microphone settings.`);
+      }
     }
-  }, []);
+  }, [checkMicrophonePermission]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -191,5 +236,6 @@ export const useAudioRecorder = () => {
     playAudio,
     seekTo,
     resetRecording,
+    checkMicrophonePermission,
   };
 };
