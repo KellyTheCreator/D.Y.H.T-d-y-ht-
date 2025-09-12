@@ -304,3 +304,20 @@ export async function getTriggers(): Promise<SoundTrigger[]> {
     throw error;
   }
 }
+
+// File operations
+export async function saveAudioFile(audioBlob: Blob, filename: string): Promise<string> {
+  try {
+    // Convert blob to Uint8Array for Tauri
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const audioData = Array.from(new Uint8Array(arrayBuffer));
+    
+    return await invoke('save_audio_file', { 
+      audioData,
+      filename 
+    });
+  } catch (error) {
+    console.error('Save audio file error:', error);
+    throw error;
+  }
+}

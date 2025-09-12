@@ -51,7 +51,10 @@ fn main() {
             database_commands::save_audio_record,
             database_commands::get_audio_records,
             database_commands::save_trigger,
-            database_commands::get_triggers
+            database_commands::get_triggers,
+            
+            // File operations
+            file_commands::save_audio_file
         ])
         .on_window_event(|event| {
             if let WindowEvent::CloseRequested { .. } = event.event() {
@@ -125,5 +128,41 @@ mod database_commands {
         let db = Database::new(&config).map_err(|e| format!("Database error: {}", e))?;
         
         db.get_active_triggers().map_err(|e| format!("Database error: {}", e))
+    }
+}
+
+mod file_commands {
+    use tauri::command;
+    use tauri::api::path::app_data_dir;
+    use std::fs;
+    use std::path::PathBuf;
+
+    #[command]
+    pub async fn save_audio_file(
+        audio_data: Vec<u8>,
+        filename: String,
+        app_handle: tauri::AppHandle,
+    ) -> Result<String, String> {
+        let config = app_handle.config();
+        let app_data_path = app_data_dir(&config).unwrap_or_else(|| PathBuf::from("."));
+        
+        // Create recordings directory
+        let recordings_dir = app_data_path.join("recordings");
+        fs::create_dir_all(&recordings_dir)
+            .map_err(|e| format!("Failed to create recordings directory: {}", e))?;
+        
+        // Generate safe filename
+        let safe_filename = filename.chars()
+            .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+            .collect::<String>();
+        
+        let file_path = recordings_dir.join(safe_filename);
+        
+        // Write audio data to file
+        fs::write(&file_path, audio_data)
+            .map_err(|e| format!("Failed to write audio file: {}", e))?;
+        
+        // Return the absolute path as string
+        file_path.to_string_lossy().to_string().into()
     }
 }
