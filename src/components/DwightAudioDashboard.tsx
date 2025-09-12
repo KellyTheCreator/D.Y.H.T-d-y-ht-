@@ -11,6 +11,8 @@ import {
   saveTrigger, 
   getTriggers, 
   getAudioRecords,
+  saveAudioRecord,
+  saveAudioFile,
   type DwightResponse,
   type LlamaResponse,
   type SoundTrigger,
@@ -1053,43 +1055,88 @@ export default function DwightAudioDashboard() {
         return;
       }
       
-      // Create URL for playback
-      const audioUrl = URL.createObjectURL(audioBlob);
+      console.log("Audio recorded successfully:", audioBlob.size, "bytes");
       
-      // Save the recording to the database
+      // Save the recording to file and database
       const recordTitle = `Dwight Memory ${new Date().toISOString()}`;
-      const filePath = `/tmp/recordings/${recordTitle.replace(/[^a-zA-Z0-9]/g, '_')}.webm`;
+      const fileName = `${recordTitle.replace(/[^a-zA-Z0-9]/g, '_')}.webm`;
       
       try {
-        // In a real implementation, you'd save the blob to the file system
-        // For now, we'll simulate this and add to recordings list
-        const newRecording: AudioRecord = {
-          title: recordTitle,
-          file_path: filePath,
-          duration: buffer,
-          created_at: new Date().toISOString(),
-          transcript: ""
-        };
+        let filePath: string;
+        let savedSuccessfully = false;
         
-        setRecordings(prev => [newRecording, ...prev]);
+        // Try to save to file system (will work in Tauri app)
+        try {
+          filePath = await saveAudioFile(audioBlob, fileName);
+          console.log("Audio file saved to:", filePath);
+          savedSuccessfully = true;
+        } catch (fileError) {
+          console.warn("File saving failed (likely running in web mode):", fileError);
+          // Fallback: create a mock path for web mode
+          filePath = `/recordings/${fileName}`;
+        }
         
-        console.log("Dwight remembered recording from buffer:", audioBlob.size, "bytes");
+        // Save to database (will work in Tauri app)
+        try {
+          const recordId = await saveAudioRecord({
+            title: recordTitle,
+            file_path: filePath,
+            transcript: "",
+            duration: buffer,
+            triggers: ""
+          });
+          console.log("Audio record saved to database with ID:", recordId);
+          savedSuccessfully = true;
+        } catch (dbError) {
+          console.warn("Database save failed (likely running in web mode):", dbError);
+          
+          if (!savedSuccessfully) {
+            // If both file and database saving failed, create local mock record
+            const newRecording: AudioRecord = {
+              title: recordTitle,
+              file_path: filePath,
+              duration: buffer,
+              created_at: new Date().toISOString(),
+              transcript: ""
+            };
+            
+            setRecordings(prev => [newRecording, ...prev]);
+            console.log("Created local recording record (web mode)");
+          }
+        }
+        
+        // Refresh recordings from database if possible
+        if (savedSuccessfully) {
+          try {
+            const updatedRecordings = await getAudioRecords();
+            setRecordings(updatedRecordings);
+            console.log("Recordings list refreshed from database");
+          } catch (refreshError) {
+            console.warn("Failed to refresh recordings list:", refreshError);
+          }
+        }
+        
+        // Success feedback
+        const sizeKB = Math.round(audioBlob.size / 1024);
+        const successMessage = savedSuccessfully 
+          ? `Dwight successfully remembered ${buffer}s of audio (${sizeKB}KB) and saved it to disk!`
+          : `Dwight remembered ${buffer}s of audio (${sizeKB}KB) but file saving is not available in web mode.`;
         
         // Add to transcript with success message
         setTranscript([
-          { type: "speech", text: `Dwight successfully remembered ${buffer}s of audio (${Math.round(audioBlob.size / 1024)}KB).` },
-          ...transcript
+          { type: "speech", text: successMessage },
+          ...transcript.slice(0, 4)
         ]);
         
         // Add to non-verbal sounds
         setNonverbal(prev => [
           { sound: "memory saved by Dwight", time: new Date().toLocaleTimeString() },
-          ...prev
+          ...prev.slice(0, 9)
         ]);
         
-      } catch (dbError) {
-        console.error("Failed to save recording to database:", dbError);
-        alert(`Dwight remembered ${Math.round(audioBlob.size / 1024)}KB from ${buffer}s buffer! (Note: Database save failed)`);
+      } catch (saveError) {
+        console.error("Failed to save recording:", saveError);
+        alert(`Dwight remembered ${Math.round(audioBlob.size / 1024)}KB from ${buffer}s buffer but failed to save: ${saveError.message}`);
       }
       
     } catch (error) {

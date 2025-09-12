@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dwight Recording Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #fff;
+        }
+        .test-container {
+            background: #2a2a2a;
+            border: 2px solid #38B6FF;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        button {
+            background: #38B6FF;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover {
+            background: #4FC3F7;
+        }
+        .log {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #F44336; }
+        .warning { color: #FF9800; }
+        .info { color: #2196F3; }
+    </style>
+</head>
+<body>
+    <h1>🦇 Dwight Audio DVR - Recording Test</h1>
+    
+    <div class="test-container">
+        <h2>Test Recording Functionality</h2>
+        <p>This test simulates the "Remember this Dwight" button functionality:</p>
+        
+        <button onclick="testRecording()">🎤 Test Recording (Mock)</button>
+        <button onclick="testRealRecording()">🎤 Test Real Recording (Needs Mic)</button>
+        <button onclick="clearLog()">🗑️ Clear Log</button>
+        
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type;
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Mock the audio buffer for testing
+        const mockAudioBuffer = {
+            isBuffering: false,
+            async checkMicrophonePermission() {
+                log('Checking microphone permission...', 'info');
+                return 'granted';
+            },
+            async startBuffering() {
+                log('Starting audio buffering...', 'info');
+                this.isBuffering = true;
+                return Promise.resolve();
+            },
+            async triggerRecording() {
+                log('Triggering recording from buffer...', 'info');
+                // Create a small mock audio blob
+                const audioData = new Uint8Array(1024).fill(42);
+                const audioBlob = new Blob([audioData], { type: 'audio/webm' });
+                log(`Generated mock audio blob: ${audioBlob.size} bytes`, 'success');
+                return audioBlob;
+            }
+        };
+
+        // Mock Tauri APIs (since we're running in web mode)
+        const mockAPI = {
+            async saveAudioFile(audioBlob, filename) {
+                log(`Attempting to save audio file: ${filename} (${audioBlob.size} bytes)`, 'info');
+                // Simulate the file saving that would happen in Tauri
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const mockPath = `/recordings/${filename}`;
+                log(`Mock file saved to: ${mockPath}`, 'success');
+                return mockPath;
+            },
+            async saveAudioRecord(record) {
+                log(`Saving audio record to database:`, 'info');
+                log(`  Title: ${record.title}`, 'info');
+                log(`  File Path: ${record.file_path}`, 'info');
+                log(`  Duration: ${record.duration}s`, 'info');
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const mockId = Math.floor(Math.random() * 1000) + 1;
+                log(`Mock record saved with ID: ${mockId}`, 'success');
+                return mockId;
+            },
+            async getAudioRecords() {
+                log('Refreshing recordings list from database...', 'info');
+                await new Promise(resolve => setTimeout(resolve, 200));
+                return [
+                    {
+                        id: 1,
+                        title: "Dwight Memory Test",
+                        file_path: "/recordings/test.webm",
+                        duration: 30,
+                        created_at: new Date().toISOString(),
+                        transcript: ""
+                    }
+                ];
+            }
+        };
+
+        // Test the recording functionality
+        async function testRecording() {
+            log('🎤 Starting recording test...', 'info');
+            
+            const isDwightAwake = true;
+            const buffer = 30;
+            
+            try {
+                // Check if Dwight is awake
+                if (!isDwightAwake) {
+                    throw new Error("Dwight is sleeping");
+                }
+                log('✓ Dwight is awake', 'success');
+                
+                // Check microphone permission
+                const permissionState = await mockAudioBuffer.checkMicrophonePermission();
+                if (permissionState === 'denied') {
+                    throw new Error("Microphone access denied");
+                }
+                
+                // Start buffering if not active
+                if (!mockAudioBuffer.isBuffering) {
+                    log('Starting audio buffer...', 'info');
+                    await mockAudioBuffer.startBuffering();
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    log('Audio buffer started', 'success');
+                }
+                
+                // Trigger recording
+                const audioBlob = await mockAudioBuffer.triggerRecording();
+                
+                if (!audioBlob || audioBlob.size === 0) {
+                    throw new Error("No audio data available");
+                }
+                
+                log(`✓ Audio recorded successfully: ${audioBlob.size} bytes`, 'success');
+                
+                // Save the recording
+                const recordTitle = `Dwight Memory ${new Date().toISOString()}`;
+                const fileName = `${recordTitle.replace(/[^a-zA-Z0-9]/g, '_')}.webm`;
+                
+                let filePath;
+                let savedSuccessfully = false;
+                
+                // Try to save to file system (mock)
+                try {
+                    filePath = await mockAPI.saveAudioFile(audioBlob, fileName);
+                    savedSuccessfully = true;
+                } catch (fileError) {
+                    log(`File saving failed: ${fileError.message}`, 'warning');
+                    filePath = `/recordings/${fileName}`;
+                }
+                
+                // Save to database (mock)
+                try {
+                    const recordId = await mockAPI.saveAudioRecord({
+                        title: recordTitle,
+                        file_path: filePath,
+                        transcript: "",
+                        duration: buffer,
+                        triggers: ""
+                    });
+                    savedSuccessfully = true;
+                } catch (dbError) {
+                    log(`Database save failed: ${dbError.message}`, 'warning');
+                }
+                
+                // Refresh recordings list
+                if (savedSuccessfully) {
+                    try {
+                        const updatedRecordings = await mockAPI.getAudioRecords();
+                        log(`Recordings list refreshed: ${updatedRecordings.length} recordings`, 'success');
+                    } catch (refreshError) {
+                        log(`Failed to refresh recordings list: ${refreshError.message}`, 'warning');
+                    }
+                }
+                
+                // Success feedback
+                const sizeKB = Math.round(audioBlob.size / 1024);
+                const successMessage = savedSuccessfully 
+                    ? `Dwight successfully remembered ${buffer}s of audio (${sizeKB}KB) and saved it to disk!`
+                    : `Dwight remembered ${buffer}s of audio (${sizeKB}KB) but file saving is not available.`;
+                
+                log(`🎉 ${successMessage}`, 'success');
+                log('Memory saved by Dwight', 'success');
+                
+            } catch (error) {
+                log(`❌ Recording test failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Test with real browser APIs
+        async function testRealRecording() {
+            log('🎤 Starting real recording test...', 'info');
+            
+            try {
+                // Check if browser supports required APIs
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Browser doesn't support audio recording");
+                }
+                
+                log('Requesting microphone permission...', 'info');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                log('✓ Microphone permission granted', 'success');
+                
+                // Create a MediaRecorder
+                const mediaRecorder = new MediaRecorder(stream);
+                const chunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        chunks.push(event.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+                    log(`✓ Real audio recorded: ${audioBlob.size} bytes`, 'success');
+                    
+                    // Test the same save logic as the mock
+                    const recordTitle = `Dwight Real Memory ${new Date().toISOString()}`;
+                    const fileName = `${recordTitle.replace(/[^a-zA-Z0-9]/g, '_')}.webm`;
+                    
+                    try {
+                        // In real app, this would call the Tauri API
+                        log(`Would save audio file: ${fileName} (${audioBlob.size} bytes)`, 'info');
+                        log('In web mode: file saving would be handled by Tauri backend', 'warning');
+                        
+                        const sizeKB = Math.round(audioBlob.size / 1024);
+                        log(`🎉 Real recording successful: ${sizeKB}KB recorded!`, 'success');
+                        
+                    } catch (error) {
+                        log(`Failed to process real recording: ${error.message}`, 'error');
+                    }
+                    
+                    // Clean up
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                // Record for 3 seconds
+                log('Recording for 3 seconds...', 'info');
+                mediaRecorder.start();
+                setTimeout(() => {
+                    mediaRecorder.stop();
+                    log('Recording stopped', 'info');
+                }, 3000);
+                
+            } catch (error) {
+                log(`❌ Real recording test failed: ${error.message}`, 'error');
+                if (error.name === 'NotAllowedError') {
+                    log('Please enable microphone permissions and try again', 'error');
+                }
+            }
+        }
+
+        // Initialize
+        log('🦇 Dwight Audio DVR Test Interface Ready', 'success');
+        log('Click the buttons above to test recording functionality', 'info');
+    </script>
+</body>
+</html>
