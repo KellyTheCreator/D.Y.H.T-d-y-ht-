@@ -409,6 +409,21 @@ export default function DwightAudioDashboard() {
   const [trimEnd, setTrimEnd] = useState(100);
   const [showTrimTool, setShowTrimTool] = useState(false);
   
+  // Current audio for inspection (from recordings or live recording)
+  const [currentAudio, setCurrentAudio] = useState<{
+    url: string | null;
+    duration: number;
+    currentTime: number;
+    isPlaying: boolean;
+    audioElement: HTMLAudioElement | null;
+  }>({
+    url: null,
+    duration: 0,
+    currentTime: 0,
+    isPlaying: false,
+    audioElement: null
+  });
+  
   // Dwight's state management
   const [isDwightAwake, setIsDwightAwake] = useState(true); // Dwight starts awake
   const [isRemembering, setIsRemembering] = useState(false); // Track if currently remembering
@@ -717,6 +732,189 @@ export default function DwightAudioDashboard() {
     }
   }, [speechRecognitionActive]);
 
+  // Current audio management for main inspector
+  const loadAudioForInspection = useCallback((audioBlob: Blob, title: string = "Recorded Audio") => {
+    // Clean up previous audio
+    if (currentAudio.audioElement) {
+      currentAudio.audioElement.pause();
+      currentAudio.audioElement = null;
+    }
+    if (currentAudio.url) {
+      URL.revokeObjectURL(currentAudio.url);
+    }
+    
+    // Create new audio URL and element
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audioElement = new Audio(audioUrl);
+    
+    audioElement.addEventListener('loadedmetadata', () => {
+      setCurrentAudio(prev => ({
+        ...prev,
+        duration: audioElement.duration
+      }));
+      console.log(`"${title}" loaded for inspection - duration: ${audioElement.duration.toFixed(2)}s`);
+    });
+    
+    audioElement.addEventListener('timeupdate', () => {
+      setCurrentAudio(prev => ({
+        ...prev,
+        currentTime: audioElement.currentTime
+      }));
+    });
+    
+    audioElement.addEventListener('ended', () => {
+      setCurrentAudio(prev => ({
+        ...prev,
+        isPlaying: false,
+        currentTime: 0
+      }));
+    });
+    
+    // Update state
+    setCurrentAudio({
+      url: audioUrl,
+      duration: 0,
+      currentTime: 0,
+      isPlaying: false,
+      audioElement
+    });
+    
+    // Update transcript to show what's loaded
+    setTranscript(prev => [
+      { type: "speech", text: `"${title}" is now loaded in the audio inspector and ready for playback, rewind, fast-forward, and trimming.` },
+      ...prev.slice(0, 4)
+    ]);
+  }, [currentAudio]);
+
+  // Play/pause current audio
+  const toggleAudioPlayback = useCallback(() => {
+    if (!currentAudio.audioElement) return;
+    
+    if (currentAudio.isPlaying) {
+      currentAudio.audioElement.pause();
+      setCurrentAudio(prev => ({ ...prev, isPlaying: false }));
+    } else {
+      currentAudio.audioElement.play();
+      setCurrentAudio(prev => ({ ...prev, isPlaying: true }));
+    }
+  }, [currentAudio]);
+
+  // Seek audio to specific time
+  const seekAudio = useCallback((time: number) => {
+    if (!currentAudio.audioElement) return;
+    
+    const seekTime = Math.max(0, Math.min(time, currentAudio.duration));
+    currentAudio.audioElement.currentTime = seekTime;
+    setCurrentAudio(prev => ({ ...prev, currentTime: seekTime }));
+  }, [currentAudio]);
+
+  // Rewind 10 seconds
+  const rewindAudio = useCallback(() => {
+    seekAudio(currentAudio.currentTime - 10);
+  }, [currentAudio.currentTime, seekAudio]);
+
+  // Fast forward 10 seconds
+  const fastForwardAudio = useCallback(() => {
+    seekAudio(currentAudio.currentTime + 10);
+  }, [currentAudio.currentTime, seekAudio]);
+
+  // Create a mock audio recording for testing (when no microphone is available)
+  const createMockAudioRecording = useCallback(() => {
+    // Create a simple audio buffer with a beep sound for testing
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const duration = 5; // 5 seconds
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, sampleRate * duration, sampleRate);
+    const channelData = buffer.getChannelData(0);
+    
+    // Generate a simple beep pattern for demonstration
+    for (let i = 0; i < buffer.length; i++) {
+      const time = i / sampleRate;
+      // Create beeps at 1-second intervals
+      if (Math.floor(time) % 1 < 0.1) {
+        channelData[i] = Math.sin(2 * Math.PI * 440 * time) * 0.3; // 440Hz beep
+      } else {
+        channelData[i] = 0;
+      }
+    }
+    
+    // Convert AudioBuffer to Blob
+    const offlineContext = new OfflineAudioContext(1, buffer.length, sampleRate);
+    const source = offlineContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(offlineContext.destination);
+    source.start();
+    
+    offlineContext.startRendering().then(audioBuffer => {
+      // Convert to WAV blob (simplified approach)
+      const wavBlob = audioBufferToWav(audioBuffer);
+      
+      // Load this mock recording for inspection
+      loadAudioForInspection(wavBlob, "Mock Test Recording (5s beeps)");
+      
+      // Add to recordings list
+      const newRecording: AudioRecord = {
+        title: "Mock Test Recording",
+        file_path: "/mock/test_recording.wav",
+        duration: duration,
+        created_at: new Date().toISOString(),
+        transcript: "Mock audio for testing playback controls"
+      };
+      
+      setRecordings(prev => [newRecording, ...prev]);
+      
+      // Update transcript
+      setTranscript(prev => [
+        { type: "speech", text: "Mock test recording created! You can now test the playback, rewind, fast-forward, and trim controls." },
+        ...prev.slice(0, 4)
+      ]);
+      
+      setNonverbal(prev => [
+        { sound: "mock recording created", time: new Date().toLocaleTimeString() },
+        ...prev.slice(0, 9)
+      ]);
+    });
+  }, [loadAudioForInspection]);
+
+  // Simple AudioBuffer to WAV conversion
+  const audioBufferToWav = (buffer: AudioBuffer): Blob => {
+    const length = buffer.length;
+    const arrayBuffer = new ArrayBuffer(44 + length * 2);
+    const view = new DataView(arrayBuffer);
+    
+    // WAV header
+    const writeString = (offset: number, string: string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, buffer.sampleRate, true);
+    view.setUint32(28, buffer.sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * 2, true);
+    
+    // Convert float32 to int16
+    const channelData = buffer.getChannelData(0);
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      const sample = Math.max(-1, Math.min(1, channelData[i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+      offset += 2;
+    }
+    
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+  };
+
   // Load data from backend and start buffering on component mount
   useEffect(() => {
     loadRecordings();
@@ -749,6 +947,15 @@ export default function DwightAudioDashboard() {
       
       if (soundContextRef.current) {
         soundContextRef.current.close();
+      }
+      
+      // Cleanup current audio
+      if (currentAudio.audioElement) {
+        currentAudio.audioElement.pause();
+        currentAudio.audioElement = null;
+      }
+      if (currentAudio.url) {
+        URL.revokeObjectURL(currentAudio.url);
       }
     };
   }, [isDwightAwake]); // Add isDwightAwake as dependency
@@ -1020,7 +1227,10 @@ export default function DwightAudioDashboard() {
       // Check microphone permission first
       const permissionState = await audioBuffer.checkMicrophonePermission();
       if (permissionState === 'denied') {
-        alert("Microphone access denied. Please enable microphone permissions in your browser settings and refresh the page.");
+        const useMock = confirm("Microphone access denied. Would you like to create a mock test recording to demonstrate the audio inspection features?");
+        if (useMock) {
+          createMockAudioRecording();
+        }
         return;
       }
       
@@ -1042,7 +1252,10 @@ export default function DwightAudioDashboard() {
           ]);
         } catch (bufferError) {
           console.error('Failed to start buffer:', bufferError);
-          alert(bufferError.message || "Failed to start audio buffering. Please check your microphone.");
+          const useMock = confirm("Failed to start audio buffering. Would you like to create a mock test recording to demonstrate the audio inspection features?");
+          if (useMock) {
+            createMockAudioRecording();
+          }
           return;
         }
       }
@@ -1051,7 +1264,10 @@ export default function DwightAudioDashboard() {
       const audioBlob = await audioBuffer.triggerRecording();
       
       if (!audioBlob || audioBlob.size === 0) {
-        alert("No audio data available. Please ensure your microphone is working and try again.");
+        const useMock = confirm("No audio data available. Would you like to create a mock test recording to demonstrate the audio inspection features?");
+        if (useMock) {
+          createMockAudioRecording();
+        }
         return;
       }
       
@@ -1122,6 +1338,9 @@ export default function DwightAudioDashboard() {
           ? `Dwight successfully remembered ${buffer}s of audio (${sizeKB}KB) and saved it to disk!`
           : `Dwight remembered ${buffer}s of audio (${sizeKB}KB) but file saving is not available in web mode.`;
         
+        // IMPORTANT FIX: Load the recorded audio into the main inspector for playback
+        loadAudioForInspection(audioBlob, recordTitle);
+        
         // Add to transcript with success message
         setTranscript([
           { type: "speech", text: successMessage },
@@ -1153,7 +1372,10 @@ export default function DwightAudioDashboard() {
         errorMessage += "Please check microphone permissions and try again.";
       }
       
-      alert(errorMessage);
+      const useMock = confirm(errorMessage + "\n\nWould you like to create a mock test recording to demonstrate the audio inspection features?");
+      if (useMock) {
+        createMockAudioRecording();
+      }
     }
   };
 
@@ -1476,7 +1698,7 @@ export default function DwightAudioDashboard() {
           </div>
           {/* --- Waveform --- */}
           <RollingWaveform 
-            playing={playing && !paused} 
+            playing={(currentAudio.isPlaying || audioRecorder.isPlaying || playing) && !paused} 
             audioData={audioRecorder.waveformData}
             isRecording={audioRecorder.isRecording}
           />
@@ -1503,15 +1725,19 @@ export default function DwightAudioDashboard() {
               }}
               title="Rewind"
               onClick={() => {
-                if (audioRecorder.audioUrl) {
-                  audioRecorder.seekTo(Math.max(0, audioRecorder.currentTime - 10));
+                if (currentAudio.url || audioRecorder.audioUrl) {
+                  if (currentAudio.url) {
+                    rewindAudio();
+                  } else {
+                    audioRecorder.seekTo(Math.max(0, audioRecorder.currentTime - 10));
+                  }
                 }
               }}
             >⏪</button>
             <button
               style={{
-                background: (audioRecorder.isPlaying || playing) ? colors.cobalt : colors.black,
-                color: (audioRecorder.isPlaying || playing) ? colors.black : colors.cobalt,
+                background: (currentAudio.isPlaying || audioRecorder.isPlaying || playing) ? colors.cobalt : colors.black,
+                color: (currentAudio.isPlaying || audioRecorder.isPlaying || playing) ? colors.black : colors.cobalt,
                 border: `2px solid ${colors.cobalt}`,
                 borderRadius: "50%",
                 width: "62px",
@@ -1521,16 +1747,18 @@ export default function DwightAudioDashboard() {
                 boxShadow: "0 2px 10px #0007",
                 cursor: "pointer"
               }}
-              title={(audioRecorder.isPlaying || playing) ? "Pause" : "Play"}
+              title={(currentAudio.isPlaying || audioRecorder.isPlaying || playing) ? "Pause" : "Play"}
               onClick={() => {
-                if (audioRecorder.audioUrl) {
+                if (currentAudio.url) {
+                  toggleAudioPlayback();
+                } else if (audioRecorder.audioUrl) {
                   audioRecorder.playAudio();
                 } else {
                   setPlaying(p => !p);
                   setPaused(false);
                 }
               }}
-            >{(audioRecorder.isPlaying || playing) ? "⏸" : "▶️"}</button>
+            >{(currentAudio.isPlaying || audioRecorder.isPlaying || playing) ? "⏸" : "▶️"}</button>
             <button
               style={{
                 background: colors.black,
@@ -1546,8 +1774,12 @@ export default function DwightAudioDashboard() {
               }}
               title="Fast Forward"
               onClick={() => {
-                if (audioRecorder.audioUrl) {
-                  audioRecorder.seekTo(Math.min(audioRecorder.duration, audioRecorder.currentTime + 10));
+                if (currentAudio.url || audioRecorder.audioUrl) {
+                  if (currentAudio.url) {
+                    fastForwardAudio();
+                  } else {
+                    audioRecorder.seekTo(Math.min(audioRecorder.duration, audioRecorder.currentTime + 10));
+                  }
                 }
               }}
             >⏩</button>
