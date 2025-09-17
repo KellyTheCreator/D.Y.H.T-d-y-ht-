@@ -189,6 +189,38 @@ export async function analyzeAudioFeatures(filePath: string): Promise<any> {
   }
 }
 
+// Web-mode database fallbacks using localStorage
+interface WebDwightMemory {
+  id: number;
+  context: string;
+  response: string;
+  created_at: string;
+  user_input: string;
+}
+
+function saveToWebDatabase(key: string, data: any): void {
+  try {
+    const existing = JSON.parse(localStorage.getItem(key) || '[]');
+    const newData = { ...data, id: Date.now(), created_at: new Date().toISOString() };
+    existing.unshift(newData);
+    // Keep only last 100 entries
+    if (existing.length > 100) existing.splice(100);
+    localStorage.setItem(key, JSON.stringify(existing));
+  } catch (error) {
+    console.warn('Failed to save to web database:', error);
+  }
+}
+
+function getFromWebDatabase(key: string, limit: number = 10): any[] {
+  try {
+    const data = JSON.parse(localStorage.getItem(key) || '[]');
+    return data.slice(0, limit);
+  } catch (error) {
+    console.warn('Failed to read from web database:', error);
+    return [];
+  }
+}
+
 // Chat with Dwight AI
 export async function chatWithDwight(userInput: string): Promise<DwightResponse> {
   try {
@@ -198,21 +230,39 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
       // Fallback to Ollama or mock response
       try {
         const llamaResponse = await chatWithOllama(userInput);
-        return {
+        const response = {
           message: llamaResponse.text,
           confidence: llamaResponse.confidence,
           context_used: false,
           suggestions: []
         };
+        
+        // Save conversation to web database
+        saveToWebDatabase('dwight_conversations', {
+          user_input: userInput,
+          response: response.message,
+          context: `User asked: ${userInput}`
+        });
+        
+        return response;
       } catch (ollamaError) {
         // Mock intelligent responses based on input
-        const response = generateMockDwightResponse(userInput);
-        return {
-          message: response,
+        const mockResponse = generateMockDwightResponse(userInput);
+        const response = {
+          message: mockResponse,
           confidence: 0.6,
           context_used: false,
           suggestions: ["Try asking about audio analysis", "Ask about recording features", "Inquire about AI models"]
         };
+        
+        // Save conversation to web database
+        saveToWebDatabase('dwight_conversations', {
+          user_input: userInput,
+          response: response.message,
+          context: `User asked: ${userInput}`
+        });
+        
+        return response;
       }
     }
   } catch (error) {
@@ -536,13 +586,19 @@ export async function analyzeAudioIntelligence(audioFilePath: string): Promise<s
 // Database operations
 export async function saveAudioRecord(record: Omit<AudioRecord, 'id' | 'created_at'>): Promise<number> {
   try {
-    return await invoke('save_audio_record', {
-      title: record.title,
-      filePath: record.file_path,
-      transcript: record.transcript,
-      duration: record.duration,
-      triggers: record.triggers,
-    });
+    if (isTauriAvailable()) {
+      return await invoke('save_audio_record', {
+        title: record.title,
+        filePath: record.file_path,
+        transcript: record.transcript,
+        duration: record.duration,
+        triggers: record.triggers,
+      });
+    } else {
+      // Save to web database
+      saveToWebDatabase('audio_records', record);
+      return Date.now(); // Return timestamp as ID
+    }
   } catch (error) {
     console.error('Save audio record error:', error);
     throw error;
@@ -554,8 +610,8 @@ export async function getAudioRecords(): Promise<AudioRecord[]> {
     if (isTauriAvailable()) {
       return await invoke('get_audio_records');
     } else {
-      // Return empty array for web mode
-      return [];
+      // Get from web database
+      return getFromWebDatabase('audio_records', 50);
     }
   } catch (error) {
     console.error('Get audio records error:', error);
@@ -569,9 +625,13 @@ export async function saveTrigger(triggerType: string, triggerValue: string): Pr
     if (isTauriAvailable()) {
       return await invoke('save_trigger', { triggerType, triggerValue });
     } else {
-      // Mock save for web mode
-      console.log(`Mock save trigger: ${triggerType} = ${triggerValue}`);
-      return Math.floor(Math.random() * 1000);
+      // Save to web database
+      saveToWebDatabase('triggers', {
+        trigger_type: triggerType,
+        trigger_value: triggerValue,
+        is_active: true
+      });
+      return Date.now(); // Return timestamp as ID
     }
   } catch (error) {
     console.error('Save trigger error:', error);
@@ -584,7 +644,13 @@ export async function getTriggers(): Promise<SoundTrigger[]> {
     if (isTauriAvailable()) {
       return await invoke('get_triggers');
     } else {
-      // Return default triggers for web mode
+      // Get from web database with default fallback
+      const webTriggers = getFromWebDatabase('triggers', 100);
+      if (webTriggers.length > 0) {
+        return webTriggers;
+      }
+      
+      // Return default triggers if none saved
       return [
         {
           id: 1,
