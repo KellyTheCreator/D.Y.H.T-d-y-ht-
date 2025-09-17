@@ -7,6 +7,9 @@ export interface AudioBufferState {
   bufferStartTime: number;
   isTriggered: boolean;
   triggerTime: number;
+  isRemembering: boolean; // DVR-style continuous recording after trigger
+  rememberingStartTime: number;
+  recordedChunks: Blob[]; // Chunks being saved during remembering
 }
 
 export const useAudioBuffer = (bufferSize: number = 30) => {
@@ -17,6 +20,9 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
     bufferStartTime: 0,
     isTriggered: false,
     triggerTime: 0,
+    isRemembering: false,
+    rememberingStartTime: 0,
+    recordedChunks: [],
   });
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -67,6 +73,14 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
         if (event.data.size > 0) {
           const timestamp = Date.now();
           bufferRef.current.push({ blob: event.data, timestamp });
+          
+          // If we're remembering (DVR recording), also add to recorded chunks
+          if (state.isRemembering) {
+            setState(prev => ({
+              ...prev,
+              recordedChunks: [...prev.recordedChunks, event.data]
+            }));
+          }
           
           // Remove old chunks beyond buffer size
           const cutoffTime = timestamp - (state.bufferSize * 1000);
@@ -163,6 +177,42 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
     });
   }, [state.bufferSize]);
 
+  // Start remembering (DVR-style) - begins saving from buffer start and continues until stopped
+  const startRemembering = useCallback((): Blob[] => {
+    const triggerTime = Date.now();
+    const bufferStartTime = triggerTime - (state.bufferSize * 1000);
+    
+    // Get buffer chunks from buffer start time
+    const bufferChunks = bufferRef.current.filter(
+      chunk => chunk.timestamp >= bufferStartTime
+    );
+    
+    setState(prev => ({
+      ...prev,
+      isRemembering: true,
+      isTriggered: true,
+      triggerTime,
+      rememberingStartTime: bufferStartTime,
+      recordedChunks: bufferChunks.map(chunk => chunk.blob)
+    }));
+    
+    return bufferChunks.map(chunk => chunk.blob);
+  }, [state.bufferSize]);
+
+  // Stop remembering and return the complete recording
+  const stopRemembering = useCallback((): Blob => {
+    // Combine all recorded chunks into final blob
+    const finalBlob = new Blob(state.recordedChunks, { type: 'audio/webm;codecs=opus' });
+    
+    setState(prev => ({
+      ...prev,
+      isRemembering: false,
+      recordedChunks: []
+    }));
+    
+    return finalBlob;
+  }, [state.recordedChunks]);
+
   // Update buffer size
   const updateBufferSize = useCallback((newSize: number) => {
     const clampedSize = Math.max(30, Math.min(3000, newSize));
@@ -208,6 +258,8 @@ export const useAudioBuffer = (bufferSize: number = 30) => {
     startBuffering,
     stopBuffering,
     triggerRecording,
+    startRemembering,
+    stopRemembering,
     updateBufferSize,
     getBufferDuration,
     getBufferFill,
