@@ -975,11 +975,26 @@ export default function DwightAudioDashboard() {
       // Update UI to show checking status
       setAiModelsStatus(prev => ({ ...prev, ...newStatus }));
       
-      // Check Whisper status first (browser-based)
+      // First check if Ollama is running by testing connection
+      let ollamaAvailable = false;
+      try {
+        const response = await fetch('http://localhost:11434/api/version', {
+          method: 'GET',
+          signal: AbortSignal.timeout(2000)
+        });
+        ollamaAvailable = response.ok;
+        console.log('Ollama service check:', ollamaAvailable ? 'Available' : 'Not available');
+      } catch (error) {
+        console.log('Ollama service not accessible - this is expected if Ollama is not installed');
+        ollamaAvailable = false;
+      }
+      
+      // Check Whisper status first
       try {
         const whisperStatus = await getWhisperStatus();
-        // If we get any response from Whisper, consider it active
-        setAiModelsStatus(prev => ({ ...prev, whisper: "active" }));
+        // Check if Whisper is actually available
+        const isWhisperActive = whisperStatus && whisperStatus.available === true;
+        setAiModelsStatus(prev => ({ ...prev, whisper: isWhisperActive ? "active" : "inactive" }));
         console.log('Whisper status:', whisperStatus);
       } catch (whisperError) {
         console.log('Whisper not available:', whisperError.message);
@@ -989,7 +1004,7 @@ export default function DwightAudioDashboard() {
       // Check if we're running in Tauri mode or web mode
       if (isTauriAvailable()) {
         console.log('Tauri backend available - checking native AI models...');
-        // In Tauri mode, use the native backend to check models
+        // In Tauri mode, use the native backend to check models directly
         try {
           const models = await getAiModels();
           console.log('Available AI models from Tauri backend:', models);
@@ -1017,47 +1032,43 @@ export default function DwightAudioDashboard() {
           setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
         } catch (tauriError) {
           console.log('Tauri AI models check failed:', tauriError.message);
-          // Fall back to assuming models are available in desktop mode but not connected
-          setAiModelsStatus(prev => ({ 
-            ...prev, 
-            llama: "inactive",
-            mistral: "inactive", 
-            gemma: "inactive",
-            rag: "inactive"
-          }));
-        }
-      } else {
-        console.log('Web mode - checking for Ollama connection...');
-        // In web mode, check for Ollama availability
-        try {
-          const models = await getAiModels();
-          console.log('Available AI models from Ollama:', models);
-          
-          if (models.length > 0) {
-            // Check for specific models by name patterns
-            const modelStatus = {
-              llama: models.some(m => {
-                const name = m.name.toLowerCase();
-                return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
-              }) ? "active" : "inactive",
+          // Fall back to web-style Ollama check in Tauri mode
+          if (ollamaAvailable) {
+            try {
+              const models = await getAiModels();
+              console.log('Available AI models via Ollama fallback:', models);
               
-              mistral: models.some(m => {
-                const name = m.name.toLowerCase();
-                return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
-              }) ? "active" : "inactive",
+              const modelStatus = {
+                llama: models.some(m => {
+                  const name = m.name.toLowerCase();
+                  return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
+                }) ? "active" : "inactive",
+                
+                mistral: models.some(m => {
+                  const name = m.name.toLowerCase();
+                  return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
+                }) ? "active" : "inactive",
+                
+                gemma: models.some(m => {
+                  const name = m.name.toLowerCase();
+                  return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
+                }) ? "active" : "inactive",
+                
+                rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
+              };
               
-              gemma: models.some(m => {
-                const name = m.name.toLowerCase();
-                return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
-              }) ? "active" : "inactive",
-              
-              rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
-            };
-            
-            setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
+              setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
+            } catch (fallbackError) {
+              console.log('Fallback Ollama check also failed:', fallbackError.message);
+              setAiModelsStatus(prev => ({ 
+                ...prev, 
+                llama: "inactive",
+                mistral: "inactive", 
+                gemma: "inactive",
+                rag: "inactive"
+              }));
+            }
           } else {
-            console.log('No Ollama models detected. Ollama may not be running.');
-            // Set all models to inactive if Ollama is not available
             setAiModelsStatus(prev => ({ 
               ...prev, 
               llama: "inactive",
@@ -1066,19 +1077,70 @@ export default function DwightAudioDashboard() {
               rag: "inactive"
             }));
           }
-        } catch (ollamaError) {
-          console.log('Ollama connection failed:', ollamaError.message);
-          console.log('💡 Tip: Start Ollama with "ollama serve" to enable AI models');
+        }
+      } else if (ollamaAvailable) {
+        // Ollama is running, check for actual models
+        try {
+          const models = await getAiModels();
+          console.log('Available AI models via Ollama:', models);
           
-          // Set all models to inactive since Ollama is not reachable
+          // Check for specific models by name patterns
+          const modelStatus = {
+            llama: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
+            }) ? "active" : "inactive",
+            
+            mistral: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
+            }) ? "active" : "inactive",
+            
+            gemma: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
+            }) ? "active" : "inactive",
+            
+            rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
+          };
+          
+          setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
+          
+          // If Ollama is running but no models found, show inactive
+          if (models.length === 0) {
+            console.log('Ollama is running but no models are installed');
+            setAiModelsStatus(prev => ({ 
+              ...prev, 
+              llama: "inactive",
+              mistral: "inactive", 
+              gemma: "inactive",
+              rag: "inactive"
+            }));
+          }
+          
+        } catch (modelsError) {
+          console.log('Error getting models from Ollama:', modelsError.message);
           setAiModelsStatus(prev => ({ 
             ...prev, 
             llama: "inactive",
-            mistral: "inactive", 
-            gemma: "inactive",
+            mistral: "inactive",
+            gemma: "inactive", 
             rag: "inactive"
           }));
         }
+      } else {
+        // Ollama not available - set all models to inactive and inform user
+        console.log('Web mode - Ollama service not detected');
+        console.log('AI Models operating in fallback mode - Ollama service not detected');
+        console.log('For full AI capabilities, install Ollama and download models like llama3, mistral, etc.');
+        console.log('💡 Tip: Start Ollama with "ollama serve" to enable AI models');
+        setAiModelsStatus(prev => ({ 
+          ...prev, 
+          llama: "inactive",
+          mistral: "inactive",
+          gemma: "inactive",
+          rag: "inactive"
+        }));
       }
       
     } catch (error) {
@@ -1546,7 +1608,7 @@ export default function DwightAudioDashboard() {
           margin: "8px 0 2px 0",
           textShadow: "0 2px 12px #000b",
         }}>
-          Dwight Audio DVR Dashboard
+          D.Y.H.T. life's audio DVR
         </h1>
         <p style={{
           color: "#bdf",
