@@ -225,9 +225,30 @@ function getFromWebDatabase(key: string, limit: number = 10): any[] {
 export async function chatWithDwight(userInput: string): Promise<DwightResponse> {
   try {
     if (isTauriAvailable()) {
-      return await invoke('chat_with_dwight', { userInput });
+      // Use enhanced chat for better AI model integration in desktop mode
+      try {
+        const enhancedResponse = await invoke('enhanced_dwight_chat', { 
+          user_input: userInput,
+          use_advanced_model: false,
+          context_documents: null 
+        });
+        
+        // Convert LlamaResponse to DwightResponse format
+        const response: DwightResponse = {
+          message: enhancedResponse.text,
+          confidence: enhancedResponse.confidence,
+          context_used: false,
+          suggestions: ["Ask about audio analysis", "Inquire about model status", "Try recording features"]
+        };
+        
+        return response;
+      } catch (enhancedError) {
+        console.log('Enhanced Dwight chat failed, falling back to basic chat:', enhancedError);
+        // Fallback to basic chat_with_dwight if enhanced fails
+        return await invoke('chat_with_dwight', { userInput });
+      }
     } else {
-      // Fallback to Ollama or mock response
+      // Fallback to Ollama or mock response in web mode
       try {
         const llamaResponse = await chatWithOllama(userInput);
         const response = {
