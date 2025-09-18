@@ -293,7 +293,7 @@ function generateMockDwightResponse(userInput: string): string {
   
   // Handle AI model and technical questions
   if (input.includes('llama') || input.includes('ai') || input.includes('model') || input.includes('ollama')) {
-    return "Indeed, Sir! I can see you're inquiring about AI models. I'm designed to work with Llama 3, Mistral, Gemma, and other sophisticated language models through Ollama. While I'm currently operating in web demonstration mode, the full desktop application connects directly to local AI models for enhanced privacy and performance. Quite remarkable technology, if I may say so!";
+    return "Indeed, Sir! I can see you're inquiring about AI models. I'm designed to work with Llama 3, Mistral, Gemma, and other sophisticated language models through Ollama. Currently I'm operating in web demonstration mode with intelligent fallback responses. For full AI capabilities, please install Ollama locally and download models like 'llama3', 'mistral', or 'gemma2'. Once available, I'll automatically connect and provide enhanced AI-powered responses. The status indicators will show green when models are active!";
   }
   
   // Handle audio and recording questions

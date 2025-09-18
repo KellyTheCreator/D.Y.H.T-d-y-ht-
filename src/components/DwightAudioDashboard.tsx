@@ -974,83 +974,93 @@ export default function DwightAudioDashboard() {
       // Update UI to show checking status
       setAiModelsStatus(prev => ({ ...prev, ...newStatus }));
       
+      // First check if Ollama is running by testing connection
+      let ollamaAvailable = false;
+      try {
+        const response = await fetch('http://localhost:11434/api/version', {
+          method: 'GET',
+          signal: AbortSignal.timeout(2000)
+        });
+        ollamaAvailable = response.ok;
+        console.log('Ollama service check:', ollamaAvailable ? 'Available' : 'Not available');
+      } catch (error) {
+        console.log('Ollama service not accessible - this is expected if Ollama is not installed');
+        ollamaAvailable = false;
+      }
+      
       // Check Whisper status first
       try {
         const whisperStatus = await getWhisperStatus();
-        // If we get any response from Whisper, consider it active
-        setAiModelsStatus(prev => ({ ...prev, whisper: "active" }));
+        // Check if Whisper is actually available
+        const isWhisperActive = whisperStatus && whisperStatus.available === true;
+        setAiModelsStatus(prev => ({ ...prev, whisper: isWhisperActive ? "active" : "inactive" }));
         console.log('Whisper status:', whisperStatus);
       } catch (whisperError) {
         console.log('Whisper not available:', whisperError.message);
         setAiModelsStatus(prev => ({ ...prev, whisper: "inactive" }));
       }
       
-      // Check if other models are available by trying to get model list
-      try {
-        const models = await getAiModels();
-        console.log('Available AI models:', models);
-        
-        // Check for specific models by name patterns
-        const modelStatus = {
-          llama: models.some(m => {
-            const name = m.name.toLowerCase();
-            return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
-          }) ? "active" : "inactive",
+      if (ollamaAvailable) {
+        // Ollama is running, check for actual models
+        try {
+          const models = await getAiModels();
+          console.log('Available AI models via Ollama:', models);
           
-          mistral: models.some(m => {
-            const name = m.name.toLowerCase();
-            return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
-          }) ? "active" : "inactive",
+          // Check for specific models by name patterns
+          const modelStatus = {
+            llama: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
+            }) ? "active" : "inactive",
+            
+            mistral: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
+            }) ? "active" : "inactive",
+            
+            gemma: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
+            }) ? "active" : "inactive",
+            
+            rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
+          };
           
-          gemma: models.some(m => {
-            const name = m.name.toLowerCase();
-            return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
-          }) ? "active" : "inactive",
+          setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
           
-          rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
-        };
-        
-        setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
-        
-        // If no models found, try alternative detection
-        if (models.length === 0) {
-          console.log('No models returned, trying alternative detection...');
-          
-          // Try to detect models by attempting basic operations
-          try {
-            // Try a simple chat to detect if any model is available
-            const testResponse = await chatWithDwight("test");
-            if (testResponse && testResponse.message) {
-              setAiModelsStatus(prev => ({ 
-                ...prev, 
-                llama: "active" // Assume at least one model is working
-              }));
-            }
-          } catch (chatError) {
-            console.log('Chat test failed:', chatError.message);
+          // If Ollama is running but no models found, show inactive
+          if (models.length === 0) {
+            console.log('Ollama is running but no models are installed');
+            setAiModelsStatus(prev => ({ 
+              ...prev, 
+              llama: "inactive",
+              mistral: "inactive", 
+              gemma: "inactive",
+              rag: "inactive"
+            }));
           }
+          
+        } catch (modelsError) {
+          console.log('Error getting models from Ollama:', modelsError.message);
+          setAiModelsStatus(prev => ({ 
+            ...prev, 
+            llama: "inactive",
+            mistral: "inactive",
+            gemma: "inactive", 
+            rag: "inactive"
+          }));
         }
-        
-      } catch (modelsError) {
-        console.log('Models endpoint not available:', modelsError.message);
-        
-        // If models endpoint fails, try individual model tests
-        const individualTests = [
-          { name: 'llama', test: () => chatWithLlama('test', 'llama3') },
-          { name: 'mistral', test: () => chatWithLlama('test', 'mistral') },
-          { name: 'gemma', test: () => chatWithLlama('test', 'gemma') },
-        ];
-        
-        for (const { name, test } of individualTests) {
-          try {
-            await test();
-            setAiModelsStatus(prev => ({ ...prev, [name]: "active" }));
-            console.log(`${name} model is active`);
-          } catch (testError) {
-            setAiModelsStatus(prev => ({ ...prev, [name]: "inactive" }));
-            console.log(`${name} model test failed:`, testError.message);
-          }
-        }
+      } else {
+        // Ollama not available - set all models to inactive and inform user
+        console.log('AI Models operating in fallback mode - Ollama service not detected');
+        console.log('For full AI capabilities, install Ollama and download models like llama3, mistral, etc.');
+        setAiModelsStatus(prev => ({ 
+          ...prev, 
+          llama: "inactive",
+          mistral: "inactive",
+          gemma: "inactive",
+          rag: "inactive"
+        }));
       }
       
     } catch (error) {
@@ -1518,7 +1528,7 @@ export default function DwightAudioDashboard() {
           margin: "8px 0 2px 0",
           textShadow: "0 2px 12px #000b",
         }}>
-          Dwight Audio DVR Dashboard
+          D.Y.H.T. lifes audio DVR
         </h1>
         <p style={{
           color: "#bdf",
@@ -1528,7 +1538,7 @@ export default function DwightAudioDashboard() {
           margin: "0 auto",
           marginBottom: "16px",
         }}>
-          Sleek. Techy. Wired for brilliance. Inspect, dissect, and command your audio files with Dwight AI.
+          powered by Dwight the private A.I.
         </p>
       </div>
       {/* Main Layout - Restructured as requested */}
