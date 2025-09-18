@@ -2274,7 +2274,7 @@ export default function DwightAudioDashboard() {
                 }
               }}
             >
-              {isDwightAwake ? "😴 Dwight's gone" : "👁️ Dwight is awake"}
+{isDwightAwake ? "😴 Sleep Dwight" : "👁️ Wake up Dwight"}
             </button>
             
             {/* Remember/Forget Button */}
@@ -2349,7 +2349,7 @@ export default function DwightAudioDashboard() {
                 }
               }}
             >
-              {isRemembering ? "🧠 Forget this Dwight" : "💭 Remember this Dwight"}
+              {isRemembering ? "⏹️ Stop Recording" : "🔴 Start Recording"}
             </button>
             
             <div style={{ 
