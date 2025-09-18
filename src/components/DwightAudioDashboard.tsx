@@ -2207,20 +2207,55 @@ export default function DwightAudioDashboard() {
                 if (!isDwightAwake) return;
                 
                 if (isRemembering) {
-                  // Stop remembering
-                  setIsRemembering(false);
-                  setNonverbal(prev => [
-                    { sound: "Dwight stopped remembering", time: new Date().toLocaleTimeString() },
-                    ...prev.slice(0, 9)
-                  ]);
+                  // Stop remembering (DVR-style)
+                  try {
+                    const finalRecording = audioBuffer.stopRemembering();
+                    setIsRemembering(false);
+                    
+                    // Save the recording
+                    if (finalRecording.size > 0) {
+                      const recordingUrl = URL.createObjectURL(finalRecording);
+                      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                      const title = `DVR Recording ${timestamp}`;
+                      
+                      // Add to recordings list
+                      setRecordings(prev => [{
+                        id: Date.now(),
+                        title,
+                        file_path: recordingUrl,
+                        duration: 0, // Will be calculated when played
+                        created_at: new Date().toLocaleString(),
+                        triggers: "Manual DVR Recording"
+                      }, ...prev]);
+                      
+                      setNonverbal(prev => [
+                        { sound: `DVR recording saved: ${title}`, time: new Date().toLocaleTimeString() },
+                        ...prev.slice(0, 9)
+                      ]);
+                    }
+                  } catch (error) {
+                    console.error('Failed to stop remembering:', error);
+                    setNonverbal(prev => [
+                      { sound: "Failed to save DVR recording", time: new Date().toLocaleTimeString() },
+                      ...prev.slice(0, 9)
+                    ]);
+                  }
                 } else {
-                  // Start remembering - trigger recording from buffer
-                  setIsRemembering(true);
-                  handleManualRecord();
-                  setNonverbal(prev => [
-                    { sound: "Dwight is now remembering", time: new Date().toLocaleTimeString() },
-                    ...prev.slice(0, 9)
-                  ]);
+                  // Start remembering (DVR-style) - begins from buffer start time
+                  try {
+                    audioBuffer.startRemembering();
+                    setIsRemembering(true);
+                    setNonverbal(prev => [
+                      { sound: `DVR recording started (${audioBuffer.bufferSize}s buffer)`, time: new Date().toLocaleTimeString() },
+                      ...prev.slice(0, 9)
+                    ]);
+                  } catch (error) {
+                    console.error('Failed to start remembering:', error);
+                    setNonverbal(prev => [
+                      { sound: "Failed to start DVR recording", time: new Date().toLocaleTimeString() },
+                      ...prev.slice(0, 9)
+                    ]);
+                  }
                 }
               }}
             >

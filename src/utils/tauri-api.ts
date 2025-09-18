@@ -8,12 +8,18 @@ function isTauriAvailable(): boolean {
 // Helper function to detect if Ollama is likely running by attempting a simple HTTP request
 async function checkOllamaConnection(): Promise<boolean> {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    
     const response = await fetch('http://localhost:11434/api/version', {
       method: 'GET',
-      signal: AbortSignal.timeout(2000) // 2 second timeout
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     return response.ok;
   } catch (error) {
+    console.log('Ollama connection check failed:', error);
     return false;
   }
 }
@@ -21,49 +27,65 @@ async function checkOllamaConnection(): Promise<boolean> {
 // Helper function to get available Ollama models
 async function getOllamaModels(): Promise<string[]> {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
     const response = await fetch('http://localhost:11434/api/tags', {
       method: 'GET',
-      signal: AbortSignal.timeout(3000)
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
+    
     if (response.ok) {
       const data = await response.json();
       return data.models?.map((model: any) => model.name) || [];
     }
   } catch (error) {
-    console.log('Ollama not accessible:', error);
+    console.log('Ollama models not accessible:', error);
   }
   return [];
 }
 
 // Helper function to chat with Ollama directly
 async function chatWithOllama(prompt: string, model: string = 'llama3'): Promise<LlamaResponse> {
-  const response = await fetch('http://localhost:11434/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: model,
-      prompt: prompt,
-      stream: false,
-      options: {
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 512
-      }
-    }),
-    signal: AbortSignal.timeout(10000) // 10 second timeout
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  
+  try {
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: model,
+        prompt: prompt,
+        stream: false,
+        options: {
+          temperature: 0.7,
+          top_p: 0.9,
+          max_tokens: 512
+        }
+      }),
+      signal: controller.signal
+    });
 
-  if (!response.ok) {
-    throw new Error(`Ollama API error: ${response.status}`);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      text: data.response || "I apologize, but I couldn't process that request properly.",
+      tokens_used: data.eval_count || 0,
+      processing_time_ms: data.total_duration ? Math.round(data.total_duration / 1000000) : 0,
+      confidence: 0.8
+    };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
   }
-
-  const data = await response.json();
-  return {
-    text: data.response || "I apologize, but I couldn't process that request properly.",
-    tokens_used: data.eval_count || 0,
-    processing_time_ms: data.total_duration ? Math.round(data.total_duration / 1000000) : 0,
-    confidence: 0.8
-  };
 }
 
 export interface AudioRecord {
@@ -167,6 +189,38 @@ export async function analyzeAudioFeatures(filePath: string): Promise<any> {
   }
 }
 
+// Web-mode database fallbacks using localStorage
+interface WebDwightMemory {
+  id: number;
+  context: string;
+  response: string;
+  created_at: string;
+  user_input: string;
+}
+
+function saveToWebDatabase(key: string, data: any): void {
+  try {
+    const existing = JSON.parse(localStorage.getItem(key) || '[]');
+    const newData = { ...data, id: Date.now(), created_at: new Date().toISOString() };
+    existing.unshift(newData);
+    // Keep only last 100 entries
+    if (existing.length > 100) existing.splice(100);
+    localStorage.setItem(key, JSON.stringify(existing));
+  } catch (error) {
+    console.warn('Failed to save to web database:', error);
+  }
+}
+
+function getFromWebDatabase(key: string, limit: number = 10): any[] {
+  try {
+    const data = JSON.parse(localStorage.getItem(key) || '[]');
+    return data.slice(0, limit);
+  } catch (error) {
+    console.warn('Failed to read from web database:', error);
+    return [];
+  }
+}
+
 // Chat with Dwight AI
 export async function chatWithDwight(userInput: string): Promise<DwightResponse> {
   try {
@@ -176,21 +230,39 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
       // Fallback to Ollama or mock response
       try {
         const llamaResponse = await chatWithOllama(userInput);
-        return {
+        const response = {
           message: llamaResponse.text,
           confidence: llamaResponse.confidence,
           context_used: false,
           suggestions: []
         };
+        
+        // Save conversation to web database
+        saveToWebDatabase('dwight_conversations', {
+          user_input: userInput,
+          response: response.message,
+          context: `User asked: ${userInput}`
+        });
+        
+        return response;
       } catch (ollamaError) {
         // Mock intelligent responses based on input
-        const response = generateMockDwightResponse(userInput);
-        return {
-          message: response,
+        const mockResponse = generateMockDwightResponse(userInput);
+        const response = {
+          message: mockResponse,
           confidence: 0.6,
           context_used: false,
           suggestions: ["Try asking about audio analysis", "Ask about recording features", "Inquire about AI models"]
         };
+        
+        // Save conversation to web database
+        saveToWebDatabase('dwight_conversations', {
+          user_input: userInput,
+          response: response.message,
+          context: `User asked: ${userInput}`
+        });
+        
+        return response;
       }
     }
   } catch (error) {
@@ -203,36 +275,86 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
 function generateMockDwightResponse(userInput: string): string {
   const input = userInput.toLowerCase();
   
-  if (input.includes('llama') || input.includes('ai') || input.includes('model')) {
-    return "Indeed, Sir! I can see you're inquiring about AI models. While I'm currently running in web demonstration mode, I would normally connect to Ollama with Llama 3 when the full desktop application is running. Quite sophisticated technology, if I may say so!";
+  // Handle questions about Dwight himself
+  if (input.includes('who are you') || input.includes('what are you') || (input.includes('dwight') && input.includes('?'))) {
+    return "I am Dwight, your devoted digital butler and AI assistant. I specialize in audio analysis, surveillance, and security monitoring. I'm designed to help you with transcription, sound recognition, recording management, and providing intelligent insights about your audio data. Currently running in web demonstration mode, but fully operational when connected to proper AI models.";
   }
   
-  if (input.includes('audio') || input.includes('record') || input.includes('sound')) {
-    return "Ah, audio matters! Most excellent choice, Sir. In the full application, I can analyze, transcribe, and inspect your audio files with remarkable precision. The web version demonstrates the interface beautifully, though the full audio processing requires the desktop application.";
+  // Handle greeting variations
+  if (input.includes('hello') || input.includes('hi') || input.includes('hey') || input.includes('good morning') || input.includes('good day')) {
+    const greetings = [
+      "Good day, Sir! I'm Dwight, your discerning digital butler. How may I assist you with your audio analysis needs today?",
+      "Ah, excellent to hear from you! I'm Dwight, ready to provide sophisticated audio processing and analysis services.",
+      "Greetings! Dwight here, at your complete service for all matters of audio surveillance and intelligence.",
+      "Most splendid day to you, Sir! I'm Dwight, your dedicated AI butler for audio management and security analysis."
+    ];
+    return greetings[Math.floor(Math.random() * greetings.length)];
   }
   
-  if (input.includes('whisper') || input.includes('transcrib')) {
-    return "Whisper AI transcription, Sir? Absolutely brilliant technology! When running the full desktop application with Whisper installed, I can provide detailed transcriptions with segment timing and confidence scores. Quite remarkable, really.";
+  // Handle AI model and technical questions
+  if (input.includes('llama') || input.includes('ai') || input.includes('model') || input.includes('ollama')) {
+    return "Indeed, Sir! I can see you're inquiring about AI models. I'm designed to work with Llama 3, Mistral, Gemma, and other sophisticated language models through Ollama. While I'm currently operating in web demonstration mode, the full desktop application connects directly to local AI models for enhanced privacy and performance. Quite remarkable technology, if I may say so!";
   }
   
-  if (input.includes('hello') || input.includes('hi') || input.includes('hey')) {
-    return "Good day to you as well, Sir! I'm Dwight, your discerning digital butler. Currently operating in web demonstration mode, but ready to showcase the interface and discuss the full capabilities of our audio analysis system.";
+  // Handle audio and recording questions
+  if (input.includes('audio') || input.includes('record') || input.includes('sound') || input.includes('hear')) {
+    return "Ah, audio matters! Most excellent area of expertise, Sir. I can analyze, transcribe, and inspect your audio files with remarkable precision. The buffering system maintains continuous audio recording, saving only when triggered - like a sophisticated DVR for real-life sounds. In the full application, I provide detailed waveform analysis, sound pattern recognition, and intelligent audio classification.";
   }
   
-  if (input.includes('help') || input.includes('what') || input.includes('how')) {
-    return "Certainly, Sir! I'm here to assist with audio analysis and management. Try using the recording controls, explore the AI model status panel, or ask me about specific features. The full desktop application provides complete functionality with local AI models.";
+  // Handle transcription questions
+  if (input.includes('whisper') || input.includes('transcrib') || input.includes('speech to text')) {
+    return "Whisper AI transcription, Sir? Absolutely brilliant technology! When the full desktop application is running with Whisper installed, I provide detailed transcriptions with segment timing, confidence scores, and speaker identification. The transcription accuracy is quite remarkable, supporting multiple languages and audio qualities.";
   }
   
-  // Default response
-  const responses = [
-    "Most intriguing observation, Sir! While I'm currently in web demonstration mode, I find your inquiry quite stimulating indeed.",
-    "Fascinating point, Sir! In the full desktop application, I would have access to complete AI capabilities and file system operations.",
-    "Quite right, Sir! That's precisely the sort of sophisticated inquiry I do so enjoy addressing with my full analytical capabilities.",
-    "Absolutely brilliant question, Sir! When connected to the proper AI models, I can provide much more detailed and contextual responses.",
-    "Indeed, Sir! Your inquiry demonstrates excellent taste in digital butler interaction. The full application offers comprehensive audio and AI features."
+  // Handle recording and buffering questions
+  if (input.includes('buffer') || input.includes('dvr') || input.includes('remember') || input.includes('trigger')) {
+    return "The buffering system, Sir? A most ingenious design! I'm always listening and maintaining a rolling audio buffer. When you say 'remember that' or trigger recording, I save audio starting from the buffer time before the trigger occurred - just like a proper DVR. The buffer continuously discards old audio to preserve privacy while keeping recent sounds ready for immediate recall.";
+  }
+  
+  // Handle help and capability questions
+  if (input.includes('help') || input.includes('what can you') || input.includes('how do') || input.includes('capabilities')) {
+    return "Certainly, Sir! I'm here to assist with comprehensive audio analysis and management. My capabilities include: real-time audio buffering and recording, speech transcription with Whisper AI, sound pattern recognition, audio file inspection and analysis, trigger-based recording system, and intelligent chat assistance. Try exploring the recording controls, checking AI model status, or asking about specific audio features!";
+  }
+  
+  // Handle sleep/wake questions
+  if (input.includes('sleep') || input.includes('wake') || input.includes('privacy') || input.includes('stop listening')) {
+    return "Privacy controls, Sir? Most important indeed! The 'Sleep Dwight' function completely stops all audio processing and listening - ensuring complete privacy when needed. 'Wake up Dwight' resumes the buffering system and audio monitoring. Your privacy is paramount, and I never process audio when asleep.";
+  }
+  
+  // Handle database and memory questions
+  if (input.includes('database') || input.includes('memory') || input.includes('remember') || input.includes('learn')) {
+    return "Memory and learning, Sir? I maintain a sophisticated SQLite database that stores our conversation history, audio records, transcriptions, and system preferences. This persistent memory allows me to learn from our interactions and provide increasingly personalized assistance. The database ensures continuity between sessions while maintaining complete local privacy.";
+  }
+  
+  // Handle simple conversational responses
+  if (input.includes('how are you') || input.includes('how is everything')) {
+    return "Quite well, thank you for asking, Sir! All systems are operating at optimal parameters. I'm ready to assist with any audio analysis tasks you might have. Is there something specific I can help you with today?";
+  }
+  
+  if (input.includes('thank you') || input.includes('thanks')) {
+    return "You're most welcome, Sir! It's my absolute pleasure to assist you. Please don't hesitate to ask if you need any further help with audio analysis or system operations.";
+  }
+  
+  // Handle questions about functionality
+  if (input.includes('test') && input.length < 10) {
+    return "System test received, Sir! All core functions are operational. Audio buffering system ready, AI processing capabilities standing by, and database connections established. How may I demonstrate my capabilities for you?";
+  }
+  
+  // Default intelligent responses based on input complexity
+  if (input.includes('?')) {
+    return "That's a most intriguing question, Sir! While I'm currently operating in web demonstration mode, I find your inquiry quite stimulating. In the full desktop application, I would have access to complete AI capabilities and could provide much more detailed analysis. Could you tell me more about what you're looking to accomplish?";
+  }
+  
+  // Default responses with personality
+  const intelligentResponses = [
+    "Most fascinating observation, Sir! Your input demonstrates excellent attention to detail. How might I assist you further with audio analysis or system operations?",
+    "Indeed, that's precisely the sort of sophisticated inquiry I do so enjoy addressing. In the full application, I can provide comprehensive analysis and detailed responses.",
+    "Quite right, Sir! Your understanding of the system is most impressive. What specific aspect would you like me to elaborate on?",
+    "Absolutely brilliant perspective, Sir! When connected to proper AI models, I can delve much deeper into such nuanced topics.",
+    "Excellent point indeed! Your inquiry shows remarkable insight. How may I help you explore this topic further?"
   ];
   
-  return responses[Math.floor(Math.random() * responses.length)];
+  return intelligentResponses[Math.floor(Math.random() * intelligentResponses.length)];
 }
 
 // Enhanced Dwight chat with advanced models
@@ -464,13 +586,19 @@ export async function analyzeAudioIntelligence(audioFilePath: string): Promise<s
 // Database operations
 export async function saveAudioRecord(record: Omit<AudioRecord, 'id' | 'created_at'>): Promise<number> {
   try {
-    return await invoke('save_audio_record', {
-      title: record.title,
-      filePath: record.file_path,
-      transcript: record.transcript,
-      duration: record.duration,
-      triggers: record.triggers,
-    });
+    if (isTauriAvailable()) {
+      return await invoke('save_audio_record', {
+        title: record.title,
+        filePath: record.file_path,
+        transcript: record.transcript,
+        duration: record.duration,
+        triggers: record.triggers,
+      });
+    } else {
+      // Save to web database
+      saveToWebDatabase('audio_records', record);
+      return Date.now(); // Return timestamp as ID
+    }
   } catch (error) {
     console.error('Save audio record error:', error);
     throw error;
@@ -482,8 +610,8 @@ export async function getAudioRecords(): Promise<AudioRecord[]> {
     if (isTauriAvailable()) {
       return await invoke('get_audio_records');
     } else {
-      // Return empty array for web mode
-      return [];
+      // Get from web database
+      return getFromWebDatabase('audio_records', 50);
     }
   } catch (error) {
     console.error('Get audio records error:', error);
@@ -497,9 +625,13 @@ export async function saveTrigger(triggerType: string, triggerValue: string): Pr
     if (isTauriAvailable()) {
       return await invoke('save_trigger', { triggerType, triggerValue });
     } else {
-      // Mock save for web mode
-      console.log(`Mock save trigger: ${triggerType} = ${triggerValue}`);
-      return Math.floor(Math.random() * 1000);
+      // Save to web database
+      saveToWebDatabase('triggers', {
+        trigger_type: triggerType,
+        trigger_value: triggerValue,
+        is_active: true
+      });
+      return Date.now(); // Return timestamp as ID
     }
   } catch (error) {
     console.error('Save trigger error:', error);
@@ -512,7 +644,13 @@ export async function getTriggers(): Promise<SoundTrigger[]> {
     if (isTauriAvailable()) {
       return await invoke('get_triggers');
     } else {
-      // Return default triggers for web mode
+      // Get from web database with default fallback
+      const webTriggers = getFromWebDatabase('triggers', 100);
+      if (webTriggers.length > 0) {
+        return webTriggers;
+      }
+      
+      // Return default triggers if none saved
       return [
         {
           id: 1,
