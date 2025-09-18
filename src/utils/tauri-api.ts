@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/tauri';
 
 // Helper function to check if Tauri backend is available
-function isTauriAvailable(): boolean {
+export function isTauriAvailable(): boolean {
   return typeof window !== 'undefined' && window.__TAURI_IPC__ !== undefined;
 }
 
@@ -292,8 +292,8 @@ function generateMockDwightResponse(userInput: string): string {
   }
   
   // Handle AI model and technical questions
-  if (input.includes('llama') || input.includes('ai') || input.includes('model') || input.includes('ollama')) {
-    return "Indeed, Sir! I can see you're inquiring about AI models. I'm designed to work with Llama 3, Mistral, Gemma, and other sophisticated language models through Ollama. While I'm currently operating in web demonstration mode, the full desktop application connects directly to local AI models for enhanced privacy and performance. Quite remarkable technology, if I may say so!";
+  if (input.includes('llama') || input.includes('ai') || input.includes('model') || input.includes('ollama') || input.includes('connect')) {
+    return "Indeed, Sir! I can see you're inquiring about AI models. I'm designed to work with Llama 3, Mistral, Gemma, and other sophisticated language models through Ollama. Currently, I notice the AI models show as inactive (red status) - this means Ollama isn't running. To enable full AI capabilities: 1) Ensure Ollama is installed, 2) Run 'ollama serve' in terminal, 3) Pull models like 'ollama pull llama3', then refresh the model status. The desktop application provides even more advanced AI features when properly connected!";
   }
   
   // Handle audio and recording questions

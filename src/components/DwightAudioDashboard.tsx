@@ -13,6 +13,7 @@ import {
   getAudioRecords,
   saveAudioRecord,
   saveAudioFile,
+  isTauriAvailable,
   type DwightResponse,
   type LlamaResponse,
   type SoundTrigger,
@@ -974,7 +975,7 @@ export default function DwightAudioDashboard() {
       // Update UI to show checking status
       setAiModelsStatus(prev => ({ ...prev, ...newStatus }));
       
-      // Check Whisper status first
+      // Check Whisper status first (browser-based)
       try {
         const whisperStatus = await getWhisperStatus();
         // If we get any response from Whisper, consider it active
@@ -985,71 +986,98 @@ export default function DwightAudioDashboard() {
         setAiModelsStatus(prev => ({ ...prev, whisper: "inactive" }));
       }
       
-      // Check if other models are available by trying to get model list
-      try {
-        const models = await getAiModels();
-        console.log('Available AI models:', models);
-        
-        // Check for specific models by name patterns
-        const modelStatus = {
-          llama: models.some(m => {
-            const name = m.name.toLowerCase();
-            return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
-          }) ? "active" : "inactive",
+      // Check if we're running in Tauri mode or web mode
+      if (isTauriAvailable()) {
+        console.log('Tauri backend available - checking native AI models...');
+        // In Tauri mode, use the native backend to check models
+        try {
+          const models = await getAiModels();
+          console.log('Available AI models from Tauri backend:', models);
           
-          mistral: models.some(m => {
-            const name = m.name.toLowerCase();
-            return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
-          }) ? "active" : "inactive",
+          // Check for specific models by name patterns
+          const modelStatus = {
+            llama: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
+            }) ? "active" : "inactive",
+            
+            mistral: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
+            }) ? "active" : "inactive",
+            
+            gemma: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
+            }) ? "active" : "inactive",
+            
+            rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
+          };
           
-          gemma: models.some(m => {
-            const name = m.name.toLowerCase();
-            return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
-          }) ? "active" : "inactive",
-          
-          rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
-        };
-        
-        setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
-        
-        // If no models found, try alternative detection
-        if (models.length === 0) {
-          console.log('No models returned, trying alternative detection...');
-          
-          // Try to detect models by attempting basic operations
-          try {
-            // Try a simple chat to detect if any model is available
-            const testResponse = await chatWithDwight("test");
-            if (testResponse && testResponse.message) {
-              setAiModelsStatus(prev => ({ 
-                ...prev, 
-                llama: "active" // Assume at least one model is working
-              }));
-            }
-          } catch (chatError) {
-            console.log('Chat test failed:', chatError.message);
-          }
+          setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
+        } catch (tauriError) {
+          console.log('Tauri AI models check failed:', tauriError.message);
+          // Fall back to assuming models are available in desktop mode but not connected
+          setAiModelsStatus(prev => ({ 
+            ...prev, 
+            llama: "inactive",
+            mistral: "inactive", 
+            gemma: "inactive",
+            rag: "inactive"
+          }));
         }
-        
-      } catch (modelsError) {
-        console.log('Models endpoint not available:', modelsError.message);
-        
-        // If models endpoint fails, try individual model tests
-        const individualTests = [
-          { name: 'llama', test: () => chatWithLlama('test', 'llama3') },
-          { name: 'mistral', test: () => chatWithLlama('test', 'mistral') },
-          { name: 'gemma', test: () => chatWithLlama('test', 'gemma') },
-        ];
-        
-        for (const { name, test } of individualTests) {
-          try {
-            await test();
-            setAiModelsStatus(prev => ({ ...prev, [name]: "active" }));
-            console.log(`${name} model is active`);
-          } catch (testError) {
-            setAiModelsStatus(prev => ({ ...prev, [name]: "inactive" }));
-            console.log(`${name} model test failed:`, testError.message);
+      } else {
+        console.log('Web mode - checking for Ollama connection...');
+        // In web mode, check for Ollama availability
+        try {
+          const models = await getAiModels();
+          console.log('Available AI models from Ollama:', models);
+          
+          if (models.length > 0) {
+            // Check for specific models by name patterns
+            const modelStatus = {
+              llama: models.some(m => {
+                const name = m.name.toLowerCase();
+                return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
+              }) ? "active" : "inactive",
+              
+              mistral: models.some(m => {
+                const name = m.name.toLowerCase();
+                return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
+              }) ? "active" : "inactive",
+              
+              gemma: models.some(m => {
+                const name = m.name.toLowerCase();
+                return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
+              }) ? "active" : "inactive",
+              
+              rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
+            };
+            
+            setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
+          } else {
+            console.log('No Ollama models detected. Ollama may not be running.');
+            // Set all models to inactive if Ollama is not available
+            setAiModelsStatus(prev => ({ 
+              ...prev, 
+              llama: "inactive",
+              mistral: "inactive", 
+              gemma: "inactive",
+              rag: "inactive"
+            }));
           }
+        } catch (ollamaError) {
+          console.log('Ollama connection failed:', ollamaError.message);
+          console.log('💡 Tip: Start Ollama with "ollama serve" to enable AI models');
+          
+          // Set all models to inactive since Ollama is not reachable
+          setAiModelsStatus(prev => ({ 
+            ...prev, 
+            llama: "inactive",
+            mistral: "inactive", 
+            gemma: "inactive",
+            rag: "inactive"
+          }));
         }
       }
       
@@ -1528,7 +1556,7 @@ export default function DwightAudioDashboard() {
           margin: "0 auto",
           marginBottom: "16px",
         }}>
-          Sleek. Techy. Wired for brilliance. Inspect, dissect, and command your audio files with Dwight AI.
+          D.Y.H.T. life's audio DVR    powered by Dwight the private A.I.
         </p>
       </div>
       {/* Main Layout - Restructured as requested */}
