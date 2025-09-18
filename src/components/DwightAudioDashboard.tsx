@@ -2205,10 +2205,11 @@ export default function DwightAudioDashboard() {
           padding: "20px 30px",
           display: "flex",
           flexDirection: "row",
-          gap: "40px",
+          gap: "20px", // Reduced from 40px
           alignItems: "flex-start",
           backgroundBlendMode: "overlay",
-          filter: createCloudFilter(1.0, 1.1)
+          filter: createCloudFilter(1.0, 1.1),
+          flexWrap: "wrap" // Allow wrapping on smaller screens
         }}>
           <h2 style={{
             fontSize: "1.32rem",
@@ -2220,7 +2221,7 @@ export default function DwightAudioDashboard() {
           }}>Triggers</h2>
           
           {/* Manual Trigger and Kill Switch */}
-          <div style={{ flex: "0 0 auto" }}>
+          <div style={{ flex: "0 0 auto", minWidth: "200px" }}>
             <b style={{ color: "#bdf", display: "block", marginBottom: "8px" }}>Dwight Controls:</b>
             
             {/* Kill Switch */}
@@ -2368,7 +2369,7 @@ export default function DwightAudioDashboard() {
           </div>
           
           {/* Sound Activated */}
-          <div style={{ flex: "1" }}>
+          <div style={{ flex: "1 1 250px", minWidth: "250px" }}>
             <b style={{ color: "#bdf", display: "block", marginBottom: "8px" }}>Sound Activated:</b>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "10px" }}>
               {soundTriggers.map((trig, idx) => (
@@ -2423,7 +2424,7 @@ export default function DwightAudioDashboard() {
           </div>
           
           {/* Speech Activated */}
-          <div style={{ flex: "1" }}>
+          <div style={{ flex: "1 1 250px", minWidth: "250px" }}>
             <b style={{ color: "#bdf", display: "block", marginBottom: "8px" }}>Speech Activated:</b>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "10px" }}>
               {speechTriggers.map((trig, idx) => (
