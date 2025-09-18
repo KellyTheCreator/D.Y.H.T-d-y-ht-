@@ -1001,6 +1001,7 @@ export default function DwightAudioDashboard() {
         setAiModelsStatus(prev => ({ ...prev, whisper: "inactive" }));
       }
       
+ copilot/fix-5cb2fa4b-4475-48bc-811d-10758fcdeab4
       // Check if we're running in Tauri mode or web mode
       if (isTauriAvailable()) {
         console.log('Tauri backend available - checking native AI models...');
@@ -1106,6 +1107,36 @@ export default function DwightAudioDashboard() {
           
           setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
           
+
+      if (ollamaAvailable) {
+        // Ollama is running, check for actual models
+        try {
+          const models = await getAiModels();
+          console.log('Available AI models via Ollama:', models);
+          
+          // Check for specific models by name patterns
+          const modelStatus = {
+            llama: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('llama') || name.includes('llama3') || name.includes('llama-3');
+            }) ? "active" : "inactive",
+            
+            mistral: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('mistral') || name.includes('mixtral') || name.includes('mistral-7b');
+            }) ? "active" : "inactive",
+            
+            gemma: models.some(m => {
+              const name = m.name.toLowerCase();
+              return name.includes('gemma') || name.includes('gemma-7b') || name.includes('gemma2');
+            }) ? "active" : "inactive",
+            
+            rag: models.some(m => m.model_type === 'rag' || m.name.toLowerCase().includes('rag')) ? "active" : "inactive"
+          };
+          
+          setAiModelsStatus(prev => ({ ...prev, ...modelStatus }));
+          
+ main
           // If Ollama is running but no models found, show inactive
           if (models.length === 0) {
             console.log('Ollama is running but no models are installed');
@@ -1130,10 +1161,15 @@ export default function DwightAudioDashboard() {
         }
       } else {
         // Ollama not available - set all models to inactive and inform user
+ copilot/fix-5cb2fa4b-4475-48bc-811d-10758fcdeab4
         console.log('Web mode - Ollama service not detected');
         console.log('AI Models operating in fallback mode - Ollama service not detected');
         console.log('For full AI capabilities, install Ollama and download models like llama3, mistral, etc.');
         console.log('💡 Tip: Start Ollama with "ollama serve" to enable AI models');
+
+        console.log('AI Models operating in fallback mode - Ollama service not detected');
+        console.log('For full AI capabilities, install Ollama and download models like llama3, mistral, etc.');
+ main
         setAiModelsStatus(prev => ({ 
           ...prev, 
           llama: "inactive",
@@ -1608,7 +1644,11 @@ export default function DwightAudioDashboard() {
           margin: "8px 0 2px 0",
           textShadow: "0 2px 12px #000b",
         }}>
+ copilot/fix-5cb2fa4b-4475-48bc-811d-10758fcdeab4
           D.Y.H.T. life's audio DVR
+
+          D.Y.H.T. lifes audio DVR
+ main
         </h1>
         <p style={{
           color: "#bdf",
@@ -1618,7 +1658,11 @@ export default function DwightAudioDashboard() {
           margin: "0 auto",
           marginBottom: "16px",
         }}>
+ copilot/fix-5cb2fa4b-4475-48bc-811d-10758fcdeab4
           D.Y.H.T. life's audio DVR    powered by Dwight the private A.I.
+
+          powered by Dwight the private A.I.
+ main
         </p>
       </div>
       {/* Main Layout - Restructured as requested */}
