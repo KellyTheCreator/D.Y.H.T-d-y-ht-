@@ -1001,7 +1001,7 @@ export default function DwightAudioDashboard() {
         setAiModelsStatus(prev => ({ ...prev, whisper: "inactive" }));
       }
       
- copilot/fix-5cb2fa4b-4475-48bc-811d-10758fcdeab4
+
       // Check if we're running in Tauri mode or web mode
       if (isTauriAvailable()) {
         console.log('Tauri backend available - checking native AI models...');
