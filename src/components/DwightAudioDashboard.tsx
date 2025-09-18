@@ -2349,7 +2349,7 @@ export default function DwightAudioDashboard() {
                 }
               }}
             >
-              {isRemembering ? "⏹️ Stop Recording" : "🔴 Start Recording"}
+              {isRemembering ? "🧠 Stop Remembering" : "💭 Start Remembering"}
             </button>
             
             <div style={{ 
