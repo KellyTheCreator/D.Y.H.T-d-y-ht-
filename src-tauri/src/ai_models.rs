@@ -94,11 +94,14 @@ impl AdvancedAI {
                     }
                 });
                 
+                // Add timeout to prevent hanging
                 let response = self.client
                     .post(endpoint)
                     .json(&payload)
+                    .timeout(std::time::Duration::from_secs(30))
                     .send()
-                    .await?;
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to connect to Ollama at {}: {}. Make sure Ollama is running with 'ollama serve'", endpoint, e))?;
                 
                 if response.status().is_success() {
                     let result: serde_json::Value = response.json().await?;
@@ -110,17 +113,14 @@ impl AdvancedAI {
                         processing_time_ms: start_time.elapsed().as_millis() as u64,
                         confidence: 0.85,
                     });
+                } else {
+                    return Err(anyhow::anyhow!("Ollama returned error status: {}. Model '{}' may not be available. Try 'ollama pull {}'", response.status(), model, model));
                 }
             }
         }
         
-        // Fallback to local implementation
-        Ok(LlamaResponse {
-            text: format!("Fallback response for: {}\n\nThis is a simulated response from {}. In a full implementation, this would be processed by the actual AI model.", prompt, model),
-            tokens_used: prompt.split_whitespace().count(),
-            processing_time_ms: start_time.elapsed().as_millis() as u64,
-            confidence: 0.6,
-        })
+        // If no config found for model, return error instead of fallback
+        Err(anyhow::anyhow!("Model '{}' not configured. Available models can be checked with 'ollama list'", model))
     }
     
     pub async fn rag_query(&self, query: &str, context_docs: Vec<String>) -> Result<LlamaResponse> {
@@ -140,6 +140,35 @@ impl AdvancedAI {
     pub fn get_available_models(&self) -> Vec<&ModelConfig> {
         self.models.values().filter(|config| config.enabled).collect()
     }
+    
+    // Check what models are actually available in Ollama
+    pub async fn get_ollama_models(&self) -> Result<Vec<String>> {
+        // Try to connect to Ollama and get list of available models
+        let response = self.client
+            .get("http://localhost:11434/api/tags")
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to connect to Ollama: {}", e))?;
+            
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("Ollama returned status: {}", response.status()));
+        }
+        
+        let data: serde_json::Value = response.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse Ollama response: {}", e))?;
+            
+        let models = data["models"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("Invalid Ollama response format"))?
+            .iter()
+            .filter_map(|model| {
+                model["name"].as_str().map(|s| s.to_string())
+            })
+            .collect();
+            
+        Ok(models)
+    }
 }
 
 #[command]
@@ -148,11 +177,30 @@ pub async fn chat_with_llama(
     model: Option<String>,
 ) -> Result<LlamaResponse, String> {
     let ai = AdvancedAI::new();
-    let model_name = model.unwrap_or_else(|| "llama3-8b".to_string());
     
-    ai.query_llama(&prompt, &model_name)
-        .await
-        .map_err(|e| format!("AI error: {}", e))
+    if let Some(specific_model) = model {
+        // If user specified a model, try it directly
+        ai.query_llama(&prompt, &specific_model)
+            .await
+            .map_err(|e| format!("Model '{}' error: {}", specific_model, e))
+    } else {
+        // Try different model names in order of preference
+        let model_candidates = ["llama3", "llama3:8b", "llama3-8b", "llama", "llama2"];
+        
+        let mut last_error = String::new();
+        for model_name in model_candidates.iter() {
+            match ai.query_llama(&prompt, model_name).await {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    last_error = format!("Model '{}' failed: {}", model_name, e);
+                    println!("Trying next model after error: {}", last_error);
+                }
+            }
+        }
+        
+        // If all attempts failed, return the last error  
+        Err(format!("All Llama models failed. Last error: {}. Please ensure Ollama is running and models are available.", last_error))
+    }
 }
 
 #[command]
@@ -170,7 +218,73 @@ pub async fn rag_search(
 #[command]
 pub async fn get_ai_models() -> Result<Vec<ModelConfig>, String> {
     let ai = AdvancedAI::new();
-    Ok(ai.get_available_models().into_iter().cloned().collect())
+    
+    // First, try to get actual models from Ollama
+    match ai.get_ollama_models().await {
+        Ok(ollama_models) => {
+            println!("Successfully connected to Ollama, found {} models", ollama_models.len());
+            
+            // Create model configs based on what's actually available in Ollama
+            let mut available_models = Vec::new();
+            
+            for model_name in ollama_models {
+                let name_lower = model_name.to_lowercase();
+                
+                if name_lower.contains("llama") {
+                    available_models.push(ModelConfig {
+                        name: format!("Llama ({})", model_name),
+                        model_type: "llama".to_string(),
+                        api_endpoint: Some("http://localhost:11434/api/generate".to_string()),
+                        local_path: None,
+                        enabled: true,
+                    });
+                } else if name_lower.contains("mistral") || name_lower.contains("mixtral") {
+                    available_models.push(ModelConfig {
+                        name: format!("Mistral ({})", model_name),
+                        model_type: "mistral".to_string(),
+                        api_endpoint: Some("http://localhost:11434/api/generate".to_string()),
+                        local_path: None,
+                        enabled: true,
+                    });
+                } else if name_lower.contains("gemma") {
+                    available_models.push(ModelConfig {
+                        name: format!("Gemma ({})", model_name),
+                        model_type: "gemma".to_string(),
+                        api_endpoint: Some("http://localhost:11434/api/generate".to_string()),
+                        local_path: None,
+                        enabled: true,
+                    });
+                } else {
+                    // Add other models as generic
+                    available_models.push(ModelConfig {
+                        name: model_name.clone(),
+                        model_type: "other".to_string(),
+                        api_endpoint: Some("http://localhost:11434/api/generate".to_string()),
+                        local_path: None,
+                        enabled: true,
+                    });
+                }
+            }
+            
+            // Add RAG capability if we have any language models
+            if !available_models.is_empty() {
+                available_models.push(ModelConfig {
+                    name: "RAG Search".to_string(),
+                    model_type: "rag".to_string(),
+                    api_endpoint: Some("http://localhost:11434/api/generate".to_string()),
+                    local_path: None,
+                    enabled: true,
+                });
+            }
+            
+            Ok(available_models)
+        }
+        Err(e) => {
+            println!("Failed to connect to Ollama: {}", e);
+            // Return empty list to indicate no models are available
+            Ok(vec![])
+        }
+    }
 }
 
 #[command]
@@ -199,8 +313,22 @@ pub async fn enhanced_dwight_chat(
         // Use RAG for context-aware responses
         ai.rag_query(&dwight_prompt, context_documents.unwrap()).await
     } else {
-        // Use standard model
-        ai.query_llama(&dwight_prompt, "llama3-8b").await
+        // Try different model names in order of preference
+        let model_candidates = ["llama3", "llama3:8b", "llama3-8b", "llama", "llama2"];
+        
+        let mut last_error = String::new();
+        for model_name in model_candidates.iter() {
+            match ai.query_llama(&dwight_prompt, model_name).await {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    last_error = format!("Model '{}' failed: {}", model_name, e);
+                    println!("Trying next model after error: {}", last_error);
+                }
+            }
+        }
+        
+        // If all model attempts failed, return the last error
+        Err(anyhow::anyhow!("All Llama models failed. Last error: {}. Please ensure Ollama is running and models are available.", last_error))
     }
     .map_err(|e| format!("Enhanced chat error: {}", e))
 }

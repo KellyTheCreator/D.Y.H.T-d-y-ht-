@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/tauri';
 
 // Helper function to check if Tauri backend is available
-function isTauriAvailable(): boolean {
+export function isTauriAvailable(): boolean {
   return typeof window !== 'undefined' && window.__TAURI_IPC__ !== undefined;
 }
 
@@ -225,9 +225,30 @@ function getFromWebDatabase(key: string, limit: number = 10): any[] {
 export async function chatWithDwight(userInput: string): Promise<DwightResponse> {
   try {
     if (isTauriAvailable()) {
-      return await invoke('chat_with_dwight', { userInput });
+      // Use enhanced chat for better AI model integration in desktop mode
+      try {
+        const enhancedResponse = await invoke('enhanced_dwight_chat', { 
+          user_input: userInput,
+          use_advanced_model: false,
+          context_documents: null 
+        });
+        
+        // Convert LlamaResponse to DwightResponse format
+        const response: DwightResponse = {
+          message: enhancedResponse.text,
+          confidence: enhancedResponse.confidence,
+          context_used: false,
+          suggestions: ["Ask about audio analysis", "Inquire about model status", "Try recording features"]
+        };
+        
+        return response;
+      } catch (enhancedError) {
+        console.log('Enhanced Dwight chat failed, falling back to basic chat:', enhancedError);
+        // Fallback to basic chat_with_dwight if enhanced fails
+        return await invoke('chat_with_dwight', { userInput });
+      }
     } else {
-      // Fallback to Ollama or mock response
+      // Fallback to Ollama or mock response in web mode
       try {
         const llamaResponse = await chatWithOllama(userInput);
         const response = {
@@ -292,8 +313,13 @@ function generateMockDwightResponse(userInput: string): string {
   }
   
   // Handle AI model and technical questions
+ copilot/fix-5cb2fa4b-4475-48bc-811d-10758fcdeab4
+  if (input.includes('llama') || input.includes('ai') || input.includes('model') || input.includes('ollama') || input.includes('connect')) {
+    return "Indeed, Sir! I can see you're inquiring about AI models. I'm designed to work with Llama 3, Mistral, Gemma, and other sophisticated language models through Ollama. Currently, I notice the AI models show as inactive (red status) - this means Ollama isn't running. To enable full AI capabilities: 1) Ensure Ollama is installed, 2) Run 'ollama serve' in terminal, 3) Pull models like 'ollama pull llama3', then refresh the model status. The desktop application provides even more advanced AI features when properly connected!";
+
   if (input.includes('llama') || input.includes('ai') || input.includes('model') || input.includes('ollama')) {
     return "Indeed, Sir! I can see you're inquiring about AI models. I'm designed to work with Llama 3, Mistral, Gemma, and other sophisticated language models through Ollama. Currently I'm operating in web demonstration mode with intelligent fallback responses. For full AI capabilities, please install Ollama locally and download models like 'llama3', 'mistral', or 'gemma2'. Once available, I'll automatically connect and provide enhanced AI-powered responses. The status indicators will show green when models are active!";
+ main
   }
   
   // Handle audio and recording questions
