@@ -149,7 +149,7 @@ impl AdvancedAI {
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to connect to Ollama: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Ollama connection failed: {}. Ensure Ollama is running with 'ollama serve'", e))?;
             
         if !response.status().is_success() {
             return Err(anyhow::anyhow!("Ollama returned status: {}", response.status()));
@@ -198,8 +198,11 @@ pub async fn chat_with_llama(
             }
         }
         
-        // If all attempts failed, return the last error  
-        Err(format!("All Llama models failed. Last error: {}. Please ensure Ollama is running and models are available.", last_error))
+        // If all attempts failed, return a helpful error message
+        Err(format!(
+            "❌ Ollama AI models not available. Last error: {}\n\n🔧 To fix this:\n1. Install Ollama from https://ollama.ai\n2. Run: ollama serve\n3. Pull models: ollama pull llama3\n4. Restart this application\n\n💡 The chat works in demo mode without AI models.",
+            last_error
+        ))
     }
 }
 

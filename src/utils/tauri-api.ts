@@ -72,7 +72,11 @@ async function chatWithOllama(prompt: string, model: string = 'llama3'): Promise
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.status}`);
+      if (response.status === 404) {
+        throw new Error(`Model '${model}' not found. Please run: ollama pull ${model}`);
+      } else {
+        throw new Error(`Ollama API error: ${response.status} - ${response.statusText}`);
+      }
     }
 
     const data = await response.json();
@@ -84,6 +88,11 @@ async function chatWithOllama(prompt: string, model: string = 'llama3'): Promise
     };
   } catch (error) {
     clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Ollama request timed out. Model '${model}' may be slow or unavailable.`);
+    } else if (error.message?.includes('fetch')) {
+      throw new Error('Ollama service is not running. Please start it with: ollama serve');
+    }
     throw error;
   }
 }
@@ -267,20 +276,43 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
         
         return response;
       } catch (ollamaError) {
-        // Mock intelligent responses based on input
+        console.warn('Ollama connection failed:', ollamaError);
+        
+        // Provide specific guidance about AI model setup
+        if (userInput.toLowerCase().includes('llama') || userInput.toLowerCase().includes('mistral') || userInput.toLowerCase().includes('gemma') || userInput.toLowerCase().includes('ai model')) {
+          const setupGuidance = "I understand you want to use advanced AI models! To enable Llama3, Mistral, and Gemma models, please:\n\n" +
+            "1. Install Ollama: Visit https://ollama.ai and download for your system\n" +
+            "2. Run: ollama pull llama3\n" +
+            "3. Run: ollama pull mistral\n" +
+            "4. Run: ollama pull gemma:7b\n" +
+            "5. Start Ollama service: ollama serve\n\n" +
+            "Once Ollama is running, refresh this page and you'll see the AI models become active (🟢). " +
+            "I'm currently running in demonstration mode with simulated responses.";
+          
+          const response = {
+            message: setupGuidance,
+            confidence: 0.9,
+            context_used: false,
+            suggestions: ["Visit https://ollama.ai", "Ask about other features", "Try the demo mode"]
+          };
+          
+          return response;
+        }
+        
+        // Mock intelligent responses based on input for other queries
         const mockResponse = generateMockDwightResponse(userInput);
         const response = {
-          message: mockResponse,
+          message: mockResponse + "\n\n📝 Note: I'm currently in demo mode. For full AI capabilities, please set up Ollama with llama3, mistral, or gemma models.",
           confidence: 0.6,
           context_used: false,
-          suggestions: ["Try asking about audio analysis", "Ask about recording features", "Inquire about AI models"]
+          suggestions: ["Ask about setting up AI models", "Try asking about audio analysis", "Ask about recording features"]
         };
         
         // Save conversation to web database
         saveToWebDatabase('dwight_conversations', {
           user_input: userInput,
           response: response.message,
-          context: `User asked: ${userInput}`
+          context: `User asked: ${userInput} [Demo mode]`
         });
         
         return response;
