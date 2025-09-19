@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { useAudioBuffer } from "../hooks/useAudioBuffer";
+import Recorder from "./Recorder";
 import { 
   chatWithDwight, 
   enhancedDwightChat,
@@ -1656,6 +1657,39 @@ export default function DwightAudioDashboard() {
             marginBottom: "7px",
             letterSpacing: "1px"
           }}>Audio Recordings</h2>
+          
+          {/* Recording Interface */}
+          <Recorder 
+            onRecordingComplete={(audioUrl, audioBlob) => {
+              const title = `Recording ${new Date().toLocaleTimeString()}`;
+              const newRecording = {
+                id: Date.now(),
+                title,
+                file_path: audioUrl,
+                duration: 0, // Will be calculated when played
+                created_at: new Date().toLocaleString(),
+                triggers: "Manual Recording"
+              };
+              setRecordings(prev => [newRecording, ...prev]);
+              
+              setNonverbal(prev => [
+                { sound: `New recording saved: ${title}`, time: new Date().toLocaleTimeString() },
+                ...prev.slice(0, 9)
+              ]);
+            }}
+            onRecordingStart={() => {
+              setNonverbal(prev => [
+                { sound: "Recording started", time: new Date().toLocaleTimeString() },
+                ...prev.slice(0, 9)
+              ]);
+            }}
+            onRecordingStop={() => {
+              setNonverbal(prev => [
+                { sound: "Recording stopped", time: new Date().toLocaleTimeString() },
+                ...prev.slice(0, 9)
+              ]);
+            }}
+          />
           
           <div style={{
             flex: 1,
