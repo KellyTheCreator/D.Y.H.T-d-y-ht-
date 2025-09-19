@@ -1,23 +1,22 @@
 {
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "Dwight",
+  "version": "0.1.0",
+  "identifier": "com.dwight.audio-dvr",
   "build": {
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run dev",
-    "devPath": "http://localhost:5173",
-    "distDir": "../dist"
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "Dwight",
-    "version": "0.1.0"
-  },
-  "tauri": {
+  "app": {
     "windows": [
       {
         "title": "Dwight Desktop Agent",
         "width": 1024,
         "height": 768,
         "resizable": true,
-        "fullscreen": false,
-        "url": "index.html"
+        "fullscreen": false
       }
     ],
     "security": {

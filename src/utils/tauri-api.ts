@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 // Helper function to check if Tauri backend is available
 export function isTauriAvailable(): boolean {
