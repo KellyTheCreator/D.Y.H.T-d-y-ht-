@@ -2120,6 +2120,29 @@ export default function DwightAudioDashboard() {
                 </span>
               </div>
             </div>
+            
+            {/* AI Models Help Message when offline */}
+            {Object.values(aiModelsStatus).every(status => status === "inactive") && (
+              <div style={{
+                marginTop: "8px",
+                padding: "8px",
+                backgroundColor: "rgba(255, 193, 7, 0.1)",
+                border: "1px solid rgba(255, 193, 7, 0.3)",
+                borderRadius: "4px",
+                fontSize: "0.75rem",
+                color: "#FFA726"
+              }}>
+                <div style={{ fontWeight: "600", marginBottom: "4px" }}>
+                  🔗 AI Models Offline
+                </div>
+                <div style={{ lineHeight: "1.3" }}>
+                  To enable Llama3, Mistral & Gemma:
+                  <br />• Install Ollama from <a href="https://ollama.ai" target="_blank" style={{ color: "#4FC3F7", textDecoration: "underline" }}>ollama.ai</a>
+                  <br />• Run: <code style={{ background: "rgba(0,0,0,0.2)", padding: "1px 3px", borderRadius: "2px" }}>ollama serve</code>
+                  <br />• Chat still works in demo mode!
+                </div>
+              </div>
+            )}
           </div>
           {/* --- Buffer Slider with Enhanced Display --- */}
           <div style={{
