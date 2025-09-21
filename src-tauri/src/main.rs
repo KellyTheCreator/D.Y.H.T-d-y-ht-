@@ -15,8 +15,8 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             // Initialize database on startup
-            let config = app.config();
-            match database::Database::new(&config) {
+            let app_handle = app.handle();
+            match database::Database::new(&app_handle) {
                 Ok(_) => println!("Database initialized successfully"),
                 Err(e) => eprintln!("Failed to initialize database: {}", e),
             }
@@ -78,8 +78,7 @@ mod database_commands {
         triggers: Option<String>,
         app_handle: tauri::AppHandle,
     ) -> Result<i64, String> {
-        let config = app_handle.config();
-        let db = Database::new(&config).map_err(|e| format!("Database error: {}", e))?;
+        let db = Database::new(&app_handle).map_err(|e| format!("Database error: {}", e))?;
         
         let record = AudioRecord {
             id: None,
@@ -96,8 +95,7 @@ mod database_commands {
 
     #[command]
     pub async fn get_audio_records(app_handle: tauri::AppHandle) -> Result<Vec<AudioRecord>, String> {
-        let config = app_handle.config();
-        let db = Database::new(&config).map_err(|e| format!("Database error: {}", e))?;
+        let db = Database::new(&app_handle).map_err(|e| format!("Database error: {}", e))?;
         
         db.get_all_audio_records().map_err(|e| format!("Database error: {}", e))
     }
@@ -108,8 +106,7 @@ mod database_commands {
         trigger_value: String,
         app_handle: tauri::AppHandle,
     ) -> Result<i64, String> {
-        let config = app_handle.config();
-        let db = Database::new(&config).map_err(|e| format!("Database error: {}", e))?;
+        let db = Database::new(&app_handle).map_err(|e| format!("Database error: {}", e))?;
 
         let trigger = SoundTrigger {
             id: None,
@@ -124,8 +121,7 @@ mod database_commands {
 
     #[command]
     pub async fn get_triggers(app_handle: tauri::AppHandle) -> Result<Vec<SoundTrigger>, String> {
-        let config = app_handle.config();
-        let db = Database::new(&config).map_err(|e| format!("Database error: {}", e))?;
+        let db = Database::new(&app_handle).map_err(|e| format!("Database error: {}", e))?;
         
         db.get_active_triggers().map_err(|e| format!("Database error: {}", e))
     }
@@ -133,7 +129,6 @@ mod database_commands {
 
 mod file_commands {
     use tauri::command;
-    use tauri::api::path::app_data_dir;
     use std::fs;
     use std::path::PathBuf;
 
@@ -143,8 +138,8 @@ mod file_commands {
         filename: String,
         app_handle: tauri::AppHandle,
     ) -> Result<String, String> {
-        let config = app_handle.config();
-        let app_data_path = app_data_dir(&config).unwrap_or_else(|| PathBuf::from("."));
+        let app_data_path = app_handle.path().app_data_dir()
+            .map_err(|e| format!("Failed to get app data directory: {}", e))?;
         
         // Create recordings directory
         let recordings_dir = app_data_path.join("recordings");
