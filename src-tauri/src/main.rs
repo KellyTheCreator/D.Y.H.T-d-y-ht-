@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use tauri::{Manager, WindowEvent};
+use tauri::WindowEvent;
 
 mod whisper;
 mod database;
@@ -56,8 +56,8 @@ fn main() {
             // File operations
             file_commands::save_audio_file
         ])
-        .on_window_event(|event| {
-            if let WindowEvent::CloseRequested { .. } = event.event() {
+        .on_window_event(|_window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
                 // Handle cleanup if needed
             }
         })
