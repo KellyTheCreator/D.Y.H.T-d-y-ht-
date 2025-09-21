@@ -163,6 +163,6 @@ mod file_commands {
             .map_err(|e| format!("Failed to write audio file: {}", e))?;
         
         // Return the absolute path as string
-        file_path.to_string_lossy().to_string().into()
+        Ok(file_path.to_string_lossy().into_owned())
     }
 }
