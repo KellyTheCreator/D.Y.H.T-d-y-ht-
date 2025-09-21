@@ -1,7 +1,6 @@
 use rusqlite::{Connection, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::api::path::app_data_dir;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AudioRecord {
@@ -37,8 +36,13 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(config: &tauri::Config) -> Result<Self> {
-        let app_data_path = app_data_dir(config).unwrap_or_else(|| PathBuf::from("."));
+    pub fn new(app_handle: &tauri::AppHandle) -> Result<Self> {
+        let app_data_path = app_handle.path().app_data_dir()
+            .map_err(|e| rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+                Some(format!("Failed to get app data directory: {}", e))
+            ))?;
+        
         std::fs::create_dir_all(&app_data_path).map_err(|e| rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
             Some(format!("Failed to create app data directory: {}", e))
