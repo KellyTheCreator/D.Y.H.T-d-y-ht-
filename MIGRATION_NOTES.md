@@ -79,6 +79,25 @@ Ran `cargo update` to upgrade all Rust crates to their latest v2-compatible vers
 - `wry: 0.53.3`
 - `tao: 0.34.3`
 
+### 6. Fixed Deprecated API Usage (December 2024)
+Replaced deprecated `tauri::api::path::app_data_dir` with Tauri v2 equivalent:
+
+```diff
+- use tauri::api::path::app_data_dir;
+- let app_data_path = app_data_dir(config).unwrap_or_else(|| PathBuf::from("."));
++ let app_data_path = app_handle.path().app_data_dir()
++     .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+```
+
+**Files Updated:**
+- `src-tauri/src/database.rs`: Updated `Database::new()` to accept `AppHandle` instead of `Config`
+- `src-tauri/src/main.rs`: Updated file operations and database command handlers
+
+**Key Changes:**
+- `Database::new(config: &tauri::Config)` → `Database::new(app_handle: &tauri::AppHandle)`
+- `app_data_dir(&config)` → `app_handle.path().app_data_dir()`
+- Improved error handling with proper Result types
+
 ## Verification
 
 After migration, the following commands now work without errors:
