@@ -185,8 +185,7 @@ pub async fn chat_with_dwight(
     user_input: String,
     app_handle: tauri::AppHandle,
 ) -> Result<DwightResponse, String> {
-    let config = app_handle.config();
-    let db = Database::new(&config).map_err(|e| format!("Database error: {}", e))?;
+    let db = Database::new(&app_handle).map_err(|e| format!("Database error: {}", e))?;
     
     // Get recent conversation context
     let context = db.get_dwight_memory_context(10).map_err(|e| format!("Database error: {}", e))?;
@@ -212,7 +211,7 @@ pub async fn chat_with_dwight(
 #[command]
 pub async fn analyze_audio_intelligence(
     audio_file_path: String,
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
 ) -> Result<Vec<String>, String> {
     // This is a placeholder for more sophisticated audio analysis
     // In a real implementation, you would:
@@ -220,7 +219,7 @@ pub async fn analyze_audio_intelligence(
     // 2. Process it with advanced ML models
     // 3. Extract meaningful patterns and features
     
-    let ai = DwightAI::new();
+    let _ai = DwightAI::new();
     
     // For now, return some intelligent analysis based on file properties
     let mut analysis = Vec::new();
