@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use tauri::WindowEvent;
+use tauri::{WindowEvent, Manager};
 
 mod whisper;
 mod database;
@@ -128,9 +128,8 @@ mod database_commands {
 }
 
 mod file_commands {
-    use tauri::command;
+    use tauri::{command, Manager};
     use std::fs;
-    use std::path::PathBuf;
 
     #[command]
     pub async fn save_audio_file(
@@ -158,6 +157,6 @@ mod file_commands {
             .map_err(|e| format!("Failed to write audio file: {}", e))?;
         
         // Return the absolute path as string
-        file_path.to_string_lossy().to_string().into()
+        Ok(file_path.to_string_lossy().to_string())
     }
 }
