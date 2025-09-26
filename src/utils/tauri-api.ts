@@ -48,16 +48,47 @@ async function getOllamaModels(): Promise<string[]> {
 }
 
 // Helper function to chat with Ollama directly
-async function chatWithOllama(prompt: string, model: string = 'llama3'): Promise<LlamaResponse> {
+async function chatWithOllama(prompt: string, model?: string): Promise<LlamaResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
+  
+  // If no model specified, find the best available Llama model
+  let selectedModel = model;
+  if (!selectedModel) {
+    const availableModels = await getOllamaModels();
+    console.log('Available Ollama models:', availableModels);
+    
+    // Try to find a Llama model in order of preference
+    const llamaModelCandidates = [
+      'llama3.2:1b', 'llama3.2', 'llama3:8b', 'llama3', 'llama3-8b', 
+      'llama2:7b', 'llama2', 'llama'
+    ];
+    
+    for (const candidate of llamaModelCandidates) {
+      if (availableModels.some(m => m === candidate || m.startsWith(candidate))) {
+        selectedModel = availableModels.find(m => m === candidate || m.startsWith(candidate));
+        console.log('Selected Llama model:', selectedModel);
+        break;
+      }
+    }
+    
+    // If no Llama model found, try any available model
+    if (!selectedModel && availableModels.length > 0) {
+      selectedModel = availableModels[0];
+      console.log('Using first available model:', selectedModel);
+    }
+    
+    if (!selectedModel) {
+      throw new Error('No models available in Ollama. Please install a model with: ollama pull llama3.2');
+    }
+  }
   
   try {
     const response = await fetch('http://localhost:11434/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: model,
+        model: selectedModel,
         prompt: prompt,
         stream: false,
         options: {
@@ -73,7 +104,7 @@ async function chatWithOllama(prompt: string, model: string = 'llama3'): Promise
 
     if (!response.ok) {
       if (response.status === 404) {
-        throw new Error(`Model '${model}' not found. Please run: ollama pull ${model}`);
+        throw new Error(`Model '${selectedModel}' not found. Please run: ollama pull ${selectedModel}`);
       } else {
         throw new Error(`Ollama API error: ${response.status} - ${response.statusText}`);
       }
@@ -89,7 +120,7 @@ async function chatWithOllama(prompt: string, model: string = 'llama3'): Promise
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error(`Ollama request timed out. Model '${model}' may be slow or unavailable.`);
+      throw new Error(`Ollama request timed out. Model '${selectedModel}' may be slow or unavailable.`);
     } else if (error.message?.includes('fetch')) {
       throw new Error('Ollama service is not running. Please start it with: ollama serve');
     }
@@ -454,7 +485,7 @@ export async function chatWithLlama(
       return await invoke('chat_with_llama', { prompt, model });
     } else {
       // Try direct Ollama connection
-      return await chatWithOllama(prompt, model || 'llama3');
+      return await chatWithOllama(prompt, model || undefined);
     }
   } catch (error) {
     console.error('Llama chat error:', error);
