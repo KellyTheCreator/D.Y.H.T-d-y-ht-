@@ -2,7 +2,15 @@
 
 **ALWAYS follow these instructions first and only fallback to additional search and context gathering if the information here is incomplete or found to be in error.**
 
+## Project Overview
+
 Dwight AI Audio DVR is a privacy-first cross-platform desktop application built with Tauri (Rust backend + React/TypeScript frontend) for audio sensing, transcription, and AI-powered analysis. Think of it as a DVR for real-life audio with an intelligent AI butler named Dwight.
+
+### Key Principles
+- **Privacy First**: All audio processing done locally, no cloud dependencies
+- **Cross-Platform**: Windows, macOS, Linux support via Tauri
+- **Modular AI**: Plug-in ready architecture for various AI models
+- **Developer Friendly**: Comprehensive web development workflow
 
 ## Working Effectively
 
@@ -101,7 +109,7 @@ npm run tauri:build  # FAILS on Ubuntu 24.04. Set timeout to 60+ minutes if atte
 ### ❌ Known Limitations
 - **Ubuntu 24.04 Desktop Builds**: `npm run tauri:build` and `npm run tauri:dev` FAIL due to webkit2gtk-4.0 vs 4.1 incompatibility
 - **No Test Framework**: Repository has no configured test runner (no jest, cypress, etc.)
-- **No Linting**: No ESLint, Prettier, or other code quality tools configured
+- **TypeScript**: Code uses relaxed TypeScript settings to accommodate rapid development
 
 ### ⚠️ Desktop Build Workarounds
 If desktop build fails with webkit/javascriptcore errors:
@@ -257,3 +265,33 @@ npm run install-deps   # Reinstall all dependencies
 - **Web development is the reliable path** - desktop builds have platform compatibility issues
 - **Read existing documentation** - README.md, INSTALLATION.md contain detailed setup instructions
 - **Focus on frontend changes** - backend Rust changes require working Tauri build system
+
+## Code Style and Standards
+
+### TypeScript/React Best Practices
+- Use functional components with hooks instead of class components
+- Follow React naming conventions (PascalCase for components, camelCase for functions)
+- Use TypeScript strict mode - all components should have proper typing
+- Prefer explicit return types for functions
+- Use meaningful variable and function names
+
+### Code Organization
+- Place React components in `src/components/`
+- Place custom hooks in `src/hooks/`
+- Place utilities in `src/utils/`
+- Place database schemas in `src/db/`
+- Keep components small and focused on single responsibility
+
+### Git Workflow
+- Create feature branches from main: `git checkout -b feature/description`
+- Use conventional commit messages: `feat:`, `fix:`, `docs:`, `refactor:`
+- Test changes thoroughly before committing
+- Keep commits focused and atomic
+
+## Security Guidelines
+
+- **Never commit secrets** - Use environment variables or secure configuration
+- **Validate user inputs** - Always sanitize and validate data from users
+- **Local processing priority** - Keep audio processing local when possible
+- **Secure database operations** - Use parameterized queries, validate schemas
+- **Review dependencies** - Be cautious when adding new dependencies
