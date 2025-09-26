@@ -184,8 +184,8 @@ pub async fn chat_with_llama(
             .await
             .map_err(|e| format!("Model '{}' error: {}", specific_model, e))
     } else {
-        // Try different model names in order of preference
-        let model_candidates = ["llama3", "llama3:8b", "llama3-8b", "llama", "llama2"];
+        // Try different model names in order of preference  
+        let model_candidates = ["llama3.2:1b", "llama3.2", "llama3:8b", "llama3", "llama3-8b", "llama2:7b", "llama2", "llama"];
         
         let mut last_error = String::new();
         for model_name in model_candidates.iter() {
@@ -317,7 +317,7 @@ pub async fn enhanced_dwight_chat(
         ai.rag_query(&dwight_prompt, context_documents.unwrap()).await
     } else {
         // Try different model names in order of preference
-        let model_candidates = ["llama3", "llama3:8b", "llama3-8b", "llama", "llama2"];
+        let model_candidates = ["llama3.2:1b", "llama3.2", "llama3:8b", "llama3", "llama3-8b", "llama2:7b", "llama2", "llama"];
         
         let mut last_error = String::new();
         for model_name in model_candidates.iter() {
