@@ -172,11 +172,18 @@ Once Ollama is running with a model installed:
 5. Test with off-topic questions like "What is the difference between a car and a truck?" - Dwight will provide intelligent AI responses
 6. If you see error messages with your question echoed back, follow the troubleshooting steps in the error message
 
-### New Behavior (Current Fix)
+### New Behavior (Current Fix - Updated Priority Order)
+
+**Connection Priority Order:**
+1. **Priority 1**: Direct AI model chat (Llama3, Mistral, Gemma via Ollama)
+2. **Priority 2**: Enhanced Dwight chat (via Rust backend)
+3. **Priority 3**: Regular chat with Dwight (fallback)
+
+**Error Handling:**
 - **When Ollama is not running**: Clear message explaining Ollama is not accessible, with setup instructions
 - **When Ollama connection fails**: Specific error message with troubleshooting steps
 - **Your question is always shown**: So you know the app received your input
-- **Console logs provide diagnostics**: Use F12 browser console to see exactly what's happening
+- **Console logs provide diagnostics**: Use F12 browser console to see exactly what's happening with priority indicators
 - **No more generic fallback**: The app will not fall back to keyword-matching demo responses
 
 ## 📊 Build Verification
