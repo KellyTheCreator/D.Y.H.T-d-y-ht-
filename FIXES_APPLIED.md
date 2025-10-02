@@ -219,7 +219,30 @@ For full audio functionality, the desktop app needs to be run as a native applic
 ✅ All 5 compiler warnings fixed  
 ✅ Desktop app now tries direct Ollama connection  
 ✅ Real AI responses available when Ollama is running  
+✅ Enhanced diagnostic logging with emoji indicators  
+✅ Clear error messages instead of generic fallbacks  
+✅ User questions are echoed in error responses  
+✅ No more misleading "web demonstration mode" text  
 ✅ Build completes with 0 warnings  
 ✅ Code is production-ready  
 
-The application now properly connects to AI models and provides intelligent responses instead of keyword-matching demo mode!
+The application now properly connects to AI models and provides intelligent responses. When AI models are not available, users receive clear, actionable error messages with troubleshooting steps instead of confusing keyword-matching demo responses.
+
+## 🔍 For Developers: Testing the Fix
+
+### Desktop App (.exe) Testing:
+1. **Without Ollama running:**
+   - Open browser console (F12) to see diagnostic logs
+   - Ask any question (e.g., "What is the difference between a car and a truck?")
+   - Console should show: `🖥️ Desktop mode detected` → `❌ Ollama is not running`
+   - Chat should display clear setup instructions with your question echoed back
+
+2. **With Ollama running and model installed:**
+   - Console should show: `🖥️ Desktop mode detected` → `✅ Available` → `✅ Enhanced chat successful!`
+   - Chat should provide real AI-powered intelligent responses
+
+### Web Mode Testing:
+1. Open browser console (F12) at http://localhost:5173
+2. Ask any question in the chat
+3. Console shows: `🌐 Web mode detected` → `⚠️ Ollama connection failed`
+4. Response explains why AI is not available with actionable steps
