@@ -14,7 +14,7 @@ pub struct DwightResponse {
 pub struct DwightAI {
     // Simple knowledge base for Dwight's personality and capabilities
     knowledge_base: HashMap<String, Vec<String>>,
-    personality_traits: Vec<String>,
+    _personality_traits: Vec<String>,
 }
 
 impl DwightAI {
@@ -43,7 +43,7 @@ impl DwightAI {
             "I store conversation context to provide more personalized assistance".to_string(),
         ]);
 
-        let personality_traits = vec![
+        let _personality_traits = vec![
             "Brilliant and analytical".to_string(),
             "Loyal and dedicated to the mission".to_string(),
             "Technically proficient with audio analysis".to_string(),
@@ -53,7 +53,7 @@ impl DwightAI {
 
         DwightAI {
             knowledge_base,
-            personality_traits,
+            _personality_traits,
         }
     }
 
@@ -147,7 +147,7 @@ impl DwightAI {
         }
     }
 
-    pub fn analyze_audio_patterns(&self, audio_data: &[f32]) -> Vec<String> {
+    pub fn _analyze_audio_patterns(&self, audio_data: &[f32]) -> Vec<String> {
         // Simple audio pattern analysis
         let mut patterns = Vec::new();
         

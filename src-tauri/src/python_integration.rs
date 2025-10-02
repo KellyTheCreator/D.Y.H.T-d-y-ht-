@@ -227,7 +227,7 @@ output = json.dumps(result)
     }
     
     #[cfg(not(feature = "python-integration"))]
-    pub fn execute_script(&self, script_name: &str, input_data: serde_json::Value) -> PythonResult {
+    pub fn execute_script(&self, _script_name: &str, _input_data: serde_json::Value) -> PythonResult {
         // Fallback implementation when Python integration is disabled
         let start_time = std::time::Instant::now();
         
