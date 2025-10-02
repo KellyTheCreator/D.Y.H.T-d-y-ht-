@@ -137,7 +137,7 @@ impl AdvancedAI {
         self.query_llama(&enriched_prompt, "llama3-8b").await
     }
     
-    pub fn get_available_models(&self) -> Vec<&ModelConfig> {
+    pub fn _get_available_models(&self) -> Vec<&ModelConfig> {
         self.models.values().filter(|config| config.enabled).collect()
     }
     

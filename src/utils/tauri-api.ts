@@ -283,9 +283,23 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
         
         return response;
       } catch (enhancedError) {
-        console.log('Enhanced Dwight chat failed, falling back to basic chat:', enhancedError);
-        // Fallback to basic chat_with_dwight if enhanced fails
-        return await invoke('chat_with_dwight', { userInput });
+        console.log('Enhanced Dwight chat via backend failed, trying direct Ollama connection:', enhancedError);
+        // Try direct Ollama connection from frontend before falling back to keyword matching
+        try {
+          const llamaResponse = await chatWithOllama(userInput);
+          const response: DwightResponse = {
+            message: llamaResponse.text,
+            confidence: llamaResponse.confidence,
+            context_used: false,
+            suggestions: ["Ask about audio analysis", "Inquire about model status", "Try recording features"]
+          };
+          console.log('Direct Ollama connection successful');
+          return response;
+        } catch (ollamaError) {
+          console.log('Direct Ollama connection also failed, falling back to basic chat:', ollamaError);
+          // Final fallback to basic chat_with_dwight if both enhanced and Ollama fail
+          return await invoke('chat_with_dwight', { userInput });
+        }
       }
     } else {
       // Fallback to Ollama or mock response in web mode
