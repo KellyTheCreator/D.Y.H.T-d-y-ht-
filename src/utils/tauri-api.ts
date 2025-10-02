@@ -513,28 +513,61 @@ export async function enhancedDwightChat(
 ): Promise<LlamaResponse> {
   try {
     if (isTauriAvailable()) {
-      return await invoke('enhanced_dwight_chat', { 
-        userInput, 
-        useAdvancedModel,
-        contextDocuments 
-      });
+      console.log('🖥️ Desktop mode - attempting enhanced chat via Rust backend...');
+      const ollamaAvailable = await checkOllamaConnection();
+      console.log(`🔍 Ollama connection check: ${ollamaAvailable ? '✅ Available' : '❌ Not available'}`);
+      
+      try {
+        const response = await invoke('enhanced_dwight_chat', { 
+          userInput, 
+          useAdvancedModel,
+          contextDocuments 
+        });
+        console.log('✅ Enhanced chat via Rust backend successful!');
+        return response;
+      } catch (backendError) {
+        console.warn('⚠️ Enhanced chat via Rust backend failed:', backendError);
+        
+        if (!ollamaAvailable) {
+          throw new Error('🤖 **AI Models Not Available**\n\n' +
+            'I notice that Ollama is not currently running. To enable real AI chat capabilities:\n\n' +
+            '1. **Install Ollama** (if not already installed): https://ollama.ai\n' +
+            '2. **Start Ollama service**: Open terminal and run `ollama serve`\n' +
+            '3. **Pull a model**: Run `ollama pull llama3.2` (or llama3, mistral, gemma)\n' +
+            '4. **Refresh this app**: The AI Models Status should show 🟢 green indicators\n\n' +
+            `Your question: "${userInput}"\n\n` +
+            'I\'d love to answer this with real AI intelligence once Ollama is set up!');
+        }
+        
+        // If Ollama seems available, try direct connection
+        console.log('🔄 Attempting direct Ollama connection from frontend...');
+        const response = await chatWithOllama(userInput);
+        console.log('✅ Direct Ollama connection successful!');
+        return response;
+      }
     } else {
+      console.log('🌐 Web mode - attempting Ollama connection...');
       // Try Ollama first
       try {
-        return await chatWithOllama(userInput);
+        const response = await chatWithOllama(userInput);
+        console.log('✅ Web mode Ollama connection successful!');
+        return response;
       } catch (ollamaError) {
-        // Fallback to mock response
-        const mockResponse = generateMockDwightResponse(userInput);
-        return {
-          text: mockResponse,
-          tokens_used: mockResponse.length / 4, // Rough estimate
-          processing_time_ms: 500,
-          confidence: 0.7
-        };
+        console.warn('⚠️ Ollama connection failed in web mode:', ollamaError);
+        // Return error message as text instead of fallback response
+        throw new Error('🚫 **Unable to Connect to AI Models**\n\n' +
+          'I attempted to connect to Ollama but encountered an error:\n' +
+          `${ollamaError.message || ollamaError}\n\n` +
+          'Please ensure:\n' +
+          '1. Ollama service is running (`ollama serve`)\n' +
+          '2. You have at least one model installed (`ollama pull llama3.2`)\n' +
+          '3. No firewall is blocking localhost:11434\n\n' +
+          `Your question: "${userInput}"\n\n` +
+          'Once Ollama is properly configured, I\'ll provide intelligent AI responses!');
       }
     }
   } catch (error) {
-    console.error('Enhanced Dwight chat error:', error);
+    console.error('❌ Enhanced Dwight chat error:', error);
     throw error;
   }
 }
