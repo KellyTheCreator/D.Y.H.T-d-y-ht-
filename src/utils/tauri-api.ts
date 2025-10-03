@@ -50,32 +50,35 @@ async function getOllamaModels(): Promise<string[]> {
 // Helper function to chat with Ollama directly
 async function chatWithOllama(prompt: string, model?: string): Promise<LlamaResponse> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  // Increased timeout to 60 seconds to allow for initial model loading
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
   
   // If no model specified, find the best available Llama model
   let selectedModel = model;
   if (!selectedModel) {
     const availableModels = await getOllamaModels();
-    console.log('Available Ollama models:', availableModels);
+    console.log('🔍 Available Ollama models:', availableModels);
     
-    // Try to find a Llama model in order of preference
-    const llamaModelCandidates = [
-      'llama3.2:1b', 'llama3.2', 'llama3:8b', 'llama3', 'llama3-8b', 
-      'llama2:7b', 'llama2', 'llama'
+    // More flexible model matching - check if model name contains key patterns
+    const llamaModelPatterns = [
+      'llama3.2', 'llama3', 'llama2', 'llama',
+      'mistral', 'gemma', 'phi', 'qwen', 'codellama'
     ];
     
-    for (const candidate of llamaModelCandidates) {
-      if (availableModels.some(m => m === candidate || m.startsWith(candidate))) {
-        selectedModel = availableModels.find(m => m === candidate || m.startsWith(candidate));
-        console.log('Selected Llama model:', selectedModel);
+    // Try to find any model matching our patterns
+    for (const pattern of llamaModelPatterns) {
+      const match = availableModels.find(m => m.toLowerCase().includes(pattern.toLowerCase()));
+      if (match) {
+        selectedModel = match;
+        console.log('✅ Selected model:', selectedModel, `(matched pattern: ${pattern})`);
         break;
       }
     }
     
-    // If no Llama model found, try any available model
+    // If no pattern matched, use first available model
     if (!selectedModel && availableModels.length > 0) {
       selectedModel = availableModels[0];
-      console.log('Using first available model:', selectedModel);
+      console.log('✅ Using first available model:', selectedModel);
     }
     
     if (!selectedModel) {
@@ -84,6 +87,7 @@ async function chatWithOllama(prompt: string, model?: string): Promise<LlamaResp
   }
   
   try {
+    console.log(`🚀 Sending request to Ollama with model: ${selectedModel}`);
     const response = await fetch('http://localhost:11434/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -111,19 +115,23 @@ async function chatWithOllama(prompt: string, model?: string): Promise<LlamaResp
     }
 
     const data = await response.json();
+    console.log(`✅ Ollama response received successfully (${data.response?.length || 0} chars)`);
     return {
       text: data.response || "I apologize, but I couldn't process that request properly.",
       tokens_used: data.eval_count || 0,
       processing_time_ms: data.total_duration ? Math.round(data.total_duration / 1000000) : 0,
       confidence: 0.8
     };
-  } catch (error) {
+  } catch (error: any) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error(`Ollama request timed out. Model '${selectedModel}' may be slow or unavailable.`);
-    } else if (error.message?.includes('fetch')) {
-      throw new Error('Ollama service is not running. Please start it with: ollama serve');
+      console.error(`❌ Ollama request timed out after 60 seconds. Model '${selectedModel}' may be loading or system is slow.`);
+      throw new Error(`Ollama request timed out after 60 seconds. The model '${selectedModel}' may still be loading into memory. Please try again in a moment.`);
+    } else if (error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+      console.error('❌ Cannot connect to Ollama service');
+      throw new Error('Ollama service is not running or not accessible. Please start it with: ollama serve');
     }
+    console.error('❌ Ollama request failed:', error);
     throw error;
   }
 }
@@ -284,8 +292,15 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
           };
           console.log('✅ Direct AI model chat successful!');
           return response;
-        } catch (llamaError) {
-          console.warn('⚠️ Direct AI model chat failed, trying enhanced backend...', llamaError);
+        } catch (llamaError: any) {
+          console.warn('⚠️ Direct AI model chat failed:', llamaError.message || llamaError);
+          // Store error for later use if backend also fails
+          const directOllamaError = llamaError;
+          
+          // If it's a timeout, the model might be loading - try backend as fallback
+          if (llamaError.message?.includes('timed out') || llamaError.message?.includes('loading')) {
+            console.log('⏱️ Request timed out (model may be loading), trying Rust backend...');
+          }
         }
       }
       
@@ -308,10 +323,10 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
         };
         
         return response;
-      } catch (enhancedError) {
+      } catch (enhancedError: any) {
         console.warn('⚠️ Enhanced Dwight chat via backend also failed:', enhancedError);
         
-        // If Ollama is not available, provide helpful guidance
+        // If Ollama is not available at all, provide setup guidance
         if (!ollamaAvailable) {
           console.error('❌ Ollama is not running. Cannot provide AI responses.');
           const setupGuidance = "🤖 **AI Models Not Available**\n\n" +
@@ -320,7 +335,7 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
             "2. **Start Ollama service**: Open terminal and run `ollama serve`\n" +
             "3. **Pull a model**: Run `ollama pull llama3.2` (or llama3, mistral, gemma)\n" +
             "4. **Refresh this app**: The AI Models Status should show 🟢 green indicators\n\n" +
-            "Once Ollama is running with a model, I'll be able to provide intelligent AI-powered responses instead of these pre-made fallback messages.\n\n" +
+            "Once Ollama is running with a model, I'll be able to provide intelligent AI-powered responses.\n\n" +
             "Your question: \"" + userInput + "\"\n\n" +
             "I'd love to answer this with real AI intelligence once Ollama is set up!";
           
@@ -332,22 +347,31 @@ export async function chatWithDwight(userInput: string): Promise<DwightResponse>
           };
         }
         
-        // If we get here, both direct AI and enhanced backend failed
-        const errorMessage = "🚫 **Unable to Connect to AI Models**\n\n" +
-          "I attempted to connect to AI models but encountered errors:\n" +
-          `${enhancedError.message || enhancedError}\n\n` +
-          "Please ensure:\n" +
-          "1. Ollama service is running (`ollama serve`)\n" +
-          "2. You have at least one model installed (`ollama pull llama3.2`)\n" +
-          "3. No firewall is blocking localhost:11434\n\n" +
+        // Ollama IS available but both attempts failed - provide specific troubleshooting
+        console.error('❌ Ollama is running but AI requests failed. Check console for details.');
+        
+        const errorMessage = "🚫 **AI Connection Issue**\n\n" +
+          "Ollama is running, but I'm having trouble getting AI responses.\n\n" +
+          "**What I tried:**\n" +
+          "1. Direct connection to Ollama ❌\n" +
+          "2. Connection via Rust backend ❌\n\n" +
+          "**Possible causes:**\n" +
+          "- Model is still loading (first request can take 30-60 seconds)\n" +
+          "- Model not pulled yet (run: `ollama pull llama3.2`)\n" +
+          "- System resources low (model needs RAM to load)\n\n" +
+          "**To fix:**\n" +
+          "1. Wait 30 seconds and try again (if model is loading)\n" +
+          "2. Check console (F12) for detailed error messages\n" +
+          "3. Run `ollama list` to verify models are installed\n" +
+          "4. Try: `ollama run llama3.2` in terminal to test manually\n\n" +
           "Your question: \"" + userInput + "\"\n\n" +
-          "Once Ollama is properly configured, I'll provide intelligent AI responses!";
+          "💡 Tip: The first AI request is slowest. Subsequent requests should be fast!";
         
         return {
           message: errorMessage,
           confidence: 0.2,
           context_used: false,
-          suggestions: ["Check Ollama service status", "Install a model", "Restart the app"]
+          suggestions: ["Wait and try again", "Check console logs (F12)", "Run: ollama list"]
         };
       }
     } else {
@@ -526,8 +550,8 @@ export async function enhancedDwightChat(
           const response = await chatWithOllama(userInput);
           console.log('✅ Direct AI model chat successful!');
           return response;
-        } catch (llamaError) {
-          console.warn('⚠️ Direct AI model chat failed, trying enhanced backend...', llamaError);
+        } catch (llamaError: any) {
+          console.warn('⚠️ Direct AI model chat failed:', llamaError.message || llamaError);
         }
       }
       
@@ -541,7 +565,7 @@ export async function enhancedDwightChat(
         });
         console.log('✅ Enhanced chat via Rust backend successful!');
         return response;
-      } catch (backendError) {
+      } catch (backendError: any) {
         console.warn('⚠️ Enhanced chat via Rust backend also failed:', backendError);
         
         if (!ollamaAvailable) {
@@ -555,15 +579,20 @@ export async function enhancedDwightChat(
             'I\'d love to answer this with real AI intelligence once Ollama is set up!');
         }
         
-        // If we get here, both methods failed but Ollama seems available
-        throw new Error('🚫 **Unable to Connect to AI Models**\n\n' +
-          'I attempted to connect to AI models but encountered errors.\n\n' +
-          'Please ensure:\n' +
-          '1. Ollama service is running (`ollama serve`)\n' +
-          '2. You have at least one model installed (`ollama pull llama3.2`)\n' +
-          '3. No firewall is blocking localhost:11434\n\n' +
+        // Ollama IS available but both attempts failed
+        throw new Error('🚫 **AI Connection Issue**\n\n' +
+          'Ollama is running, but I\'m having trouble getting AI responses.\n\n' +
+          '**Possible causes:**\n' +
+          '- Model is still loading (first request can take 30-60 seconds)\n' +
+          '- Model not pulled yet (run: `ollama pull llama3.2`)\n' +
+          '- System resources low (model needs RAM to load)\n\n' +
+          '**To fix:**\n' +
+          '1. Wait 30 seconds and try again (if model is loading)\n' +
+          '2. Check console (F12) for detailed error messages\n' +
+          '3. Run `ollama list` to verify models are installed\n' +
+          '4. Try: `ollama run llama3.2` in terminal to test manually\n\n' +
           `Your question: "${userInput}"\n\n` +
-          'Once Ollama is properly configured, I\'ll provide intelligent AI responses!');
+          '💡 Tip: The first AI request is slowest. Subsequent requests should be fast!');
       }
     } else {
       console.log('🌐 Web mode - attempting AI chat...');
@@ -573,9 +602,9 @@ export async function enhancedDwightChat(
         const response = await chatWithOllama(userInput);
         console.log('✅ Direct AI model chat successful!');
         return response;
-      } catch (ollamaError) {
-        console.warn('⚠️ AI model connection failed in web mode:', ollamaError);
-        // Return error message as text instead of fallback response
+      } catch (ollamaError: any) {
+        console.warn('⚠️ AI model connection failed in web mode:', ollamaError.message || ollamaError);
+        // Return helpful error message
         throw new Error('🚫 **Unable to Connect to AI Models**\n\n' +
           'I attempted to connect to Ollama but encountered an error:\n' +
           `${ollamaError.message || ollamaError}\n\n` +
@@ -584,7 +613,7 @@ export async function enhancedDwightChat(
           '2. You have at least one model installed (`ollama pull llama3.2`)\n' +
           '3. No firewall is blocking localhost:11434\n\n' +
           `Your question: "${userInput}"\n\n` +
-          'Once Ollama is properly configured, I\'ll provide intelligent AI responses!');
+          '💡 Tip: First AI request can take 30-60 seconds while model loads!');
       }
     }
   } catch (error) {
