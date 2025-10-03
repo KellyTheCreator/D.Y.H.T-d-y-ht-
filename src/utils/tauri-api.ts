@@ -28,7 +28,8 @@ async function checkOllamaConnection(): Promise<boolean> {
 async function getOllamaModels(): Promise<string[]> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    // Increased timeout to 10 seconds - sometimes Ollama takes time to respond with model list
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
     const response = await fetch('http://localhost:11434/api/tags', {
       method: 'GET',
@@ -39,10 +40,18 @@ async function getOllamaModels(): Promise<string[]> {
     
     if (response.ok) {
       const data = await response.json();
-      return data.models?.map((model: any) => model.name) || [];
+      const models = data.models?.map((model: any) => model.name) || [];
+      console.log(`📋 Found ${models.length} Ollama model(s):`, models);
+      return models;
+    } else {
+      console.warn(`⚠️ Ollama API returned status ${response.status}`);
     }
-  } catch (error) {
-    console.log('Ollama models not accessible:', error);
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.error('❌ Timeout getting Ollama models list (10s exceeded)');
+    } else {
+      console.error('❌ Failed to get Ollama models:', error.message || error);
+    }
   }
   return [];
 }
@@ -82,12 +91,20 @@ async function chatWithOllama(prompt: string, model?: string): Promise<LlamaResp
     }
     
     if (!selectedModel) {
+      console.error('❌ No models found! Available models list was empty.');
+      console.error('💡 This usually means:');
+      console.error('   1. No models are installed (run: ollama list)');
+      console.error('   2. Ollama is running but no models pulled yet');
+      console.error('   3. Timeout getting model list (Ollama slow to respond)');
       throw new Error('No models available in Ollama. Please install a model with: ollama pull llama3.2');
     }
   }
   
   try {
     console.log(`🚀 Sending request to Ollama with model: ${selectedModel}`);
+    console.log(`⏱️ Timeout set to 60 seconds (first request may take 30-60s while model loads)`);
+    
+    const startTime = Date.now();
     const response = await fetch('http://localhost:11434/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -105,17 +122,21 @@ async function chatWithOllama(prompt: string, model?: string): Promise<LlamaResp
     });
 
     clearTimeout(timeoutId);
+    const elapsedMs = Date.now() - startTime;
+    console.log(`⏱️ Request completed in ${(elapsedMs / 1000).toFixed(1)}s`);
 
     if (!response.ok) {
       if (response.status === 404) {
+        console.error(`❌ Model '${selectedModel}' not found in Ollama`);
         throw new Error(`Model '${selectedModel}' not found. Please run: ollama pull ${selectedModel}`);
       } else {
+        console.error(`❌ Ollama API error: ${response.status} - ${response.statusText}`);
         throw new Error(`Ollama API error: ${response.status} - ${response.statusText}`);
       }
     }
 
     const data = await response.json();
-    console.log(`✅ Ollama response received successfully (${data.response?.length || 0} chars)`);
+    console.log(`✅ Ollama response received successfully (${data.response?.length || 0} chars, ${data.eval_count || 0} tokens)`);
     return {
       text: data.response || "I apologize, but I couldn't process that request properly.",
       tokens_used: data.eval_count || 0,
@@ -125,13 +146,16 @@ async function chatWithOllama(prompt: string, model?: string): Promise<LlamaResp
   } catch (error: any) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      console.error(`❌ Ollama request timed out after 60 seconds. Model '${selectedModel}' may be loading or system is slow.`);
-      throw new Error(`Ollama request timed out after 60 seconds. The model '${selectedModel}' may still be loading into memory. Please try again in a moment.`);
+      console.error(`❌ Ollama request timed out after 60 seconds`);
+      console.error(`💡 Model '${selectedModel}' may still be loading. This is normal for first request.`);
+      console.error(`💡 Try again in 10-20 seconds. Subsequent requests will be faster.`);
+      throw new Error(`Request timed out after 60 seconds. Model '${selectedModel}' may still be loading. Please wait 10-20 seconds and try again.`);
     } else if (error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
-      console.error('❌ Cannot connect to Ollama service');
-      throw new Error('Ollama service is not running or not accessible. Please start it with: ollama serve');
+      console.error('❌ Cannot connect to Ollama service at http://localhost:11434');
+      console.error('💡 Make sure Ollama is running: ollama serve');
+      throw new Error('Cannot connect to Ollama at localhost:11434. Please start Ollama service: ollama serve');
     }
-    console.error('❌ Ollama request failed:', error);
+    console.error('❌ Ollama request failed:', error.message || error);
     throw error;
   }
 }
@@ -272,7 +296,10 @@ function getFromWebDatabase(key: string, limit: number = 10): any[] {
 // Chat with Dwight AI
 export async function chatWithDwight(userInput: string): Promise<DwightResponse> {
   try {
-    if (isTauriAvailable()) {
+    const tauriAvailable = isTauriAvailable();
+    console.log(`🔍 Environment check: Tauri=${tauriAvailable ? 'YES (Desktop)' : 'NO (Web)'}, __TAURI_IPC__=${typeof window !== 'undefined' && window.__TAURI_IPC__ !== undefined}`);
+    
+    if (tauriAvailable) {
       console.log('🖥️ Desktop mode detected - attempting AI chat...');
       
       // First, check if Ollama is accessible
