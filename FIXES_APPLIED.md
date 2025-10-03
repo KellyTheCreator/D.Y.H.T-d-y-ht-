@@ -22,28 +22,44 @@
 - **Solution**: Prefixed with underscore: `_get_available_models`
 - **Why**: This method exists for model enumeration but isn't currently used by the API
 
-## ✅ Desktop App Demo Mode Issue Fixed
+## ✅ Desktop App Demo Mode Issue Fixed (Updated)
 
 ### Problem
-The desktop .exe version was behaving like web demo mode with keyword-matching responses instead of using actual AI models through Ollama.
+The desktop .exe version was behaving like web demo mode with keyword-matching responses instead of using actual AI models through Ollama. Users were getting confusing "web demonstration mode" messages even when running the desktop app, and unclear feedback about why AI wasn't working.
 
-### Root Cause
+### Root Cause (Original)
 The `chatWithDwight()` function in `src/utils/tauri-api.ts` had this flow:
 1. Try backend enhanced chat (requires Ollama via Rust backend)
 2. If fails → Fall back to basic `chat_with_dwight` (keyword matching)
 
 This meant if the Rust backend couldn't connect to Ollama, it immediately fell back to demo mode.
 
-### Solution Applied
+### Solution Applied (Original)
 Modified the fallback logic to match web mode behavior:
 1. Try backend enhanced chat (via Tauri invoke)
 2. If fails → Try **direct Ollama connection from frontend** (same as web mode)
 3. Only as last resort → Fall back to keyword-matching demo mode
 
-### Code Changes
-**File**: `src/utils/tauri-api.ts` (lines 264-290)
+### Problem (Updated - Still Occurring)
+Even with the above fix, users were still getting demo mode responses with misleading messages:
+- Generic "web demonstration mode" messages even in desktop app
+- Fallback to keyword-matching without clear explanation of why
+- No diagnostic information to help users troubleshoot
+- User questions were ignored in error messages (confusing users)
 
-**Before**:
+### Solution Applied (Updated - Current Fix)
+Completely removed the keyword-matching fallback and replaced with diagnostic error messages:
+1. Check if Ollama is accessible before attempting connection
+2. Try backend enhanced chat (via Tauri invoke)
+3. If fails but Ollama is accessible → Try direct Ollama connection
+4. If Ollama not accessible → Show clear setup instructions with user's question
+5. If connection fails → Show specific error with troubleshooting steps
+6. **NO MORE** generic keyword-matching fallback responses
+
+### Code Changes
+**File**: `src/utils/tauri-api.ts` (lines 264-340+)
+
+**Before (Original)**:
 ```typescript
 if (isTauriAvailable()) {
   try {
@@ -57,7 +73,7 @@ if (isTauriAvailable()) {
 }
 ```
 
-**After**:
+**After (First Fix)**:
 ```typescript
 if (isTauriAvailable()) {
   try {
@@ -72,6 +88,49 @@ if (isTauriAvailable()) {
     } catch (ollamaError) {
       // Final fallback to keyword matching
       return await invoke('chat_with_dwight', { userInput });
+    }
+  }
+}
+```
+
+**After (Current Fix)**:
+```typescript
+if (isTauriAvailable()) {
+  console.log('🖥️ Desktop mode detected - attempting AI chat...');
+  
+  // First, check if Ollama is accessible
+  const ollamaAvailable = await checkOllamaConnection();
+  console.log(`🔍 Ollama connection check: ${ollamaAvailable ? '✅' : '❌'}`);
+  
+  try {
+    console.log('🚀 Attempting enhanced chat via Rust backend...');
+    const enhancedResponse = await invoke('enhanced_dwight_chat', {...});
+    console.log('✅ Enhanced chat successful!');
+    return response;
+  } catch (enhancedError) {
+    console.warn('⚠️ Enhanced Dwight chat via backend failed:', enhancedError);
+    
+    // If Ollama is not available, provide helpful guidance immediately
+    if (!ollamaAvailable) {
+      console.error('❌ Ollama is not running. Cannot provide AI responses.');
+      const setupGuidance = "🤖 **AI Models Not Available**\n\n" +
+        "I notice that Ollama is not currently running...\n" +
+        "Your question: \"" + userInput + "\"...";
+      return { message: setupGuidance, ... };
+    }
+    
+    // Try direct Ollama connection
+    try {
+      console.log('🔄 Attempting direct Ollama connection from frontend...');
+      const llamaResponse = await chatWithOllama(userInput);
+      console.log('✅ Direct Ollama connection successful!');
+      return response;
+    } catch (ollamaError) {
+      console.error('❌ Direct Ollama connection also failed:', ollamaError);
+      // Return specific error message with user's question
+      const errorMessage = "🚫 **Unable to Connect to AI Models**...\n" +
+        "Your question: \"" + userInput + "\"...";
+      return { message: errorMessage, ... };
     }
   }
 }
@@ -103,8 +162,29 @@ if (isTauriAvailable()) {
 Once Ollama is running with a model installed:
 1. Launch the desktop app (.exe)
 2. Check AI Models Status in the UI - should show 🟢 (green) for available models
-3. Chat with Dwight - he will now use actual AI instead of keyword matching
-4. Test with off-topic questions like "What is the difference between a car and a truck?" or "What is the current time?" - Dwight will provide intelligent responses
+3. Open browser console (F12) to see diagnostic logs with emoji indicators:
+   - 🖥️ = Desktop mode detected
+   - 🔍 = Ollama connection check
+   - ✅ = Success
+   - ❌ = Failed
+   - ⚠️ = Warning
+4. Chat with Dwight - he will now use actual AI instead of pre-made responses
+5. Test with off-topic questions like "What is the difference between a car and a truck?" - Dwight will provide intelligent AI responses
+6. If you see error messages with your question echoed back, follow the troubleshooting steps in the error message
+
+### New Behavior (Current Fix - Updated Priority Order)
+
+**Connection Priority Order:**
+1. **Priority 1**: Direct AI model chat (Llama3, Mistral, Gemma via Ollama)
+2. **Priority 2**: Enhanced Dwight chat (via Rust backend)
+3. **Priority 3**: Regular chat with Dwight (fallback)
+
+**Error Handling:**
+- **When Ollama is not running**: Clear message explaining Ollama is not accessible, with setup instructions
+- **When Ollama connection fails**: Specific error message with troubleshooting steps
+- **Your question is always shown**: So you know the app received your input
+- **Console logs provide diagnostics**: Use F12 browser console to see exactly what's happening with priority indicators
+- **No more generic fallback**: The app will not fall back to keyword-matching demo responses
 
 ## 📊 Build Verification
 
@@ -146,7 +226,30 @@ For full audio functionality, the desktop app needs to be run as a native applic
 ✅ All 5 compiler warnings fixed  
 ✅ Desktop app now tries direct Ollama connection  
 ✅ Real AI responses available when Ollama is running  
+✅ Enhanced diagnostic logging with emoji indicators  
+✅ Clear error messages instead of generic fallbacks  
+✅ User questions are echoed in error responses  
+✅ No more misleading "web demonstration mode" text  
 ✅ Build completes with 0 warnings  
 ✅ Code is production-ready  
 
-The application now properly connects to AI models and provides intelligent responses instead of keyword-matching demo mode!
+The application now properly connects to AI models and provides intelligent responses. When AI models are not available, users receive clear, actionable error messages with troubleshooting steps instead of confusing keyword-matching demo responses.
+
+## 🔍 For Developers: Testing the Fix
+
+### Desktop App (.exe) Testing:
+1. **Without Ollama running:**
+   - Open browser console (F12) to see diagnostic logs
+   - Ask any question (e.g., "What is the difference between a car and a truck?")
+   - Console should show: `🖥️ Desktop mode detected` → `❌ Ollama is not running`
+   - Chat should display clear setup instructions with your question echoed back
+
+2. **With Ollama running and model installed:**
+   - Console should show: `🖥️ Desktop mode detected` → `✅ Available` → `✅ Enhanced chat successful!`
+   - Chat should provide real AI-powered intelligent responses
+
+### Web Mode Testing:
+1. Open browser console (F12) at http://localhost:5173
+2. Ask any question in the chat
+3. Console shows: `🌐 Web mode detected` → `⚠️ Ollama connection failed`
+4. Response explains why AI is not available with actionable steps
